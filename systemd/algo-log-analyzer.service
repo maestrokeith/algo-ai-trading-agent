@@ -1,0 +1,13 @@
+[Unit]
+Description=AlgoSphere read-only recurring log analyzer
+# Safe enable:
+# sudo cp systemd/algo-log-analyzer.* /etc/systemd/system/
+# sudo systemctl daemon-reload
+# sudo systemctl enable --now algo-log-analyzer.timer
+
+[Service]
+Type=oneshot
+User=algosphere
+WorkingDirectory=/opt/algosphere/algo-ai-trading-agent
+Environment=PYTHONPATH=/opt/algosphere/algo-ai-trading-agent
+ExecStart=/opt/algosphere/algo-ai-trading-agent/bin/algo analyze-logs --live --timer

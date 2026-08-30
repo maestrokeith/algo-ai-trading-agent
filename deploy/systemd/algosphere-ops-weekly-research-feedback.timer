@@ -1,0 +1,12 @@
+[Unit]
+Description=Run AlgoSphere weekly research feedback on Saturday
+
+[Timer]
+# Host timezone should be America/New_York.
+OnCalendar=Sat 09:00:00
+AccuracySec=60
+Persistent=false
+Unit=algosphere-ops-weekly-research-feedback.service
+
+[Install]
+WantedBy=timers.target

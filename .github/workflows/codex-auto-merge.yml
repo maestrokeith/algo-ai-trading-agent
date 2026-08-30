@@ -1,0 +1,166 @@
+# AutoOps Guarded Auto-Merge workflow. It never deploys or restarts live services.
+name: Codex Guarded Auto-Merge
+
+'on':
+  pull_request:
+    types:
+      - labeled
+      - synchronize
+      - reopened
+      - ready_for_review
+  pull_request_review:
+    types:
+      - submitted
+  check_suite:
+    types:
+      - completed
+  workflow_run:
+    workflows:
+      - Codex PR Validation
+    types:
+      - completed
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  checks: read
+
+jobs:
+  guarded-auto-merge:
+    name: Guarded Codex Auto-Merge
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Repository diagnostic
+        run: |
+          set -euo pipefail
+          pwd
+          git status --short
+          git rev-parse --show-toplevel
+
+      - name: Resolve pull request
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER_PULL_REQUEST: ${{ github.event.pull_request.number }}
+          PR_NUMBER_REVIEW: ${{ github.event.pull_request.number }}
+          CHECK_SUITE_BRANCH: ${{ github.event.check_suite.head_branch }}
+          WORKFLOW_RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          pr_number=""
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            pr_number="${PR_NUMBER_PULL_REQUEST}"
+          elif [ "$EVENT_NAME" = "pull_request_review" ]; then
+            pr_number="${PR_NUMBER_REVIEW}"
+          elif [ "$EVENT_NAME" = "check_suite" ] && [ -n "${CHECK_SUITE_BRANCH:-}" ]; then
+            pr_number="$(gh pr list --state open --head "$CHECK_SUITE_BRANCH" --json number --jq '.[0].number // empty')"
+          elif [ "$EVENT_NAME" = "workflow_run" ] && [ -n "${WORKFLOW_RUN_BRANCH:-}" ]; then
+            pr_number="$(gh pr list --state open --head "$WORKFLOW_RUN_BRANCH" --json number --jq '.[0].number // empty')"
+          fi
+          echo "pr_number=${pr_number}" >> "$GITHUB_OUTPUT"
+
+      - name: Evaluate merge guard
+        id: guard
+        if: steps.resolve.outputs.pr_number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+          gh pr view "$PR_NUMBER" \
+            --json number,title,body,headRefName,isDraft,mergeStateStatus,labels,url \
+            > /tmp/codex_auto_merge_pr.json
+          python - <<'PY' > /tmp/codex_auto_merge_guard.env
+          import json
+
+          with open("/tmp/codex_auto_merge_pr.json", encoding="utf-8") as handle:
+              pr = json.load(handle)
+
+          labels = {item.get("name", "") for item in pr.get("labels") or []}
+          head = pr.get("headRefName") or ""
+          title = pr.get("title") or ""
+          body = pr.get("body") or ""
+          merge_state = pr.get("mergeStateStatus") or ""
+          allowed_merge_states = {"CLEAN", "HAS_HOOKS", "UNKNOWN", "UNSTABLE"}
+
+          eligible = True
+          reasons = []
+          if not head.startswith("codex/"):
+              eligible = False
+              reasons.append("branch_not_codex")
+          if pr.get("isDraft"):
+              eligible = False
+              reasons.append("draft")
+          if "codex-validation-passed" not in labels:
+              eligible = False
+              reasons.append("missing_codex_validation_passed")
+          if "codex-validation-failed" in labels:
+              eligible = False
+              reasons.append("has_codex_validation_failed")
+          if "needs-human-review" in labels:
+              eligible = False
+              reasons.append("has_needs_human_review")
+          if merge_state not in allowed_merge_states:
+              eligible = False
+              reasons.append(f"merge_state_{merge_state or 'unknown'}")
+
+          is_paper = "environment:paper" in labels or "[PAPER]" in title.upper() or "[PAPER]" in body.upper()
+          is_live = "environment:live" in labels or "[LIVE]" in title.upper() or "[LIVE]" in body.upper()
+
+          print(f"eligible={'true' if eligible else 'false'}")
+          print(f"is_paper={'true' if is_paper else 'false'}")
+          print(f"is_live={'true' if is_live else 'false'}")
+          print(f"reason={','.join(reasons) if reasons else 'eligible'}")
+          PY
+          cat /tmp/codex_auto_merge_guard.env >> "$GITHUB_OUTPUT"
+
+      - name: Comment skip reason
+        if: steps.resolve.outputs.pr_number != '' && steps.guard.outputs.eligible != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+          REASON: ${{ steps.guard.outputs.reason }}
+        run: |
+          set -euo pipefail
+          gh pr comment "$PR_NUMBER" --body "Codex guarded auto-merge skipped: ${REASON}."
+
+      - name: Merge validated Codex PR
+        id: merge
+        if: steps.resolve.outputs.pr_number != '' && steps.guard.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+          gh pr merge "$PR_NUMBER" --squash --delete-branch
+          echo "AUTOOPS_AUTO_MERGED pr=${PR_NUMBER}"
+          echo "merged=true" >> "$GITHUB_OUTPUT"
+
+      - name: Comment live merge result
+        if: steps.merge.outputs.merged == 'true' && steps.guard.outputs.is_paper != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+          gh pr comment "$PR_NUMBER" --body "Merged. Live restart is manual."
+
+      - name: Comment paper merge result
+        if: steps.merge.outputs.merged == 'true' && steps.guard.outputs.is_paper == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+          gh pr comment "$PR_NUMBER" --body "Merged. Paper post-merge apply must run on the local paper host; GitHub Actions did not restart any service."

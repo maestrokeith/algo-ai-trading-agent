@@ -1,0 +1,69 @@
+# =============================================================================
+# Strategy v2 overlay — merged into config["strategy_v2"] by load_app_config().
+# Hedge-fund style buckets (documentation; allocator hooks TBD):
+#   Index core    — market exposure  — e.g. QQQ
+#   Growth alpha  — high beta        — e.g. NVDA
+#   Defensive     — macro hedge      — e.g. XLF
+#   Global        — diversification  — e.g. JD
+#   Opportunistic — rotation         — e.g. AMZN / META
+#   Hedge         — downside         — e.g. SQQQ
+# =============================================================================
+
+portfolio:
+  max_positions: 10
+  max_position_pct: 0.10
+  min_position_pct: 0.03
+  base_position_pct: 0.06   # position_size_v2: equity * this * regime_long_mult
+
+regime:
+  bullish:
+    score_min: 4
+    long_mult: 1.0
+    hedge_mult: 0.0
+  neutral:
+    score_min: 2
+    long_mult: 0.5
+    hedge_mult: 0.15
+  bearish:
+    score_min: 0
+    long_mult: 0.2
+    hedge_mult: 0.5
+
+signals:
+  trend:
+    ma_fast: 20
+    ma_slow: 50
+    require_price_above_ma: true
+  momentum:
+    rsi_period: 14
+    rsi_min: 45
+    rsi_max: 70
+  breakout:
+    enabled: true
+    lookback_days: 10
+
+hedging:
+  symbol: SQQQ
+  enable_always_partial: true
+  max_hedge_pct: 0.25
+  pct_equity_score_ge_2: 0.10
+  pct_equity_below_2: 0.25
+
+risk:
+  stop_loss_pct: 2.0
+  take_profit_pct: 5.0
+  trailing_stop: true
+  max_daily_loss_pct: 2.0
+
+execution:
+  rebalance_interval_minutes: 15
+  entry_interval_minutes: 10
+  exit_interval_minutes: 12
+
+options:
+  enabled: true
+  independent_signal: true
+  max_capital_pct: 0.20
+  iv_rank_proxy_min: 60
+  breakout_lookback_days: 5
+  use_realized_vol_as_iv_proxy: true

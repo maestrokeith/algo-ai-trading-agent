@@ -1,0 +1,26 @@
+[Unit]
+Description=AlgoSphere post-reboot live readiness validation
+Documentation=file:/opt/algosphere/algo-ai-trading-agent/docs/OPERATIONS.md
+Wants=network-online.target
+After=network-online.target algo.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/algosphere/algo-ai-trading-agent
+Environment=PYTHONPATH=/opt/algosphere/algo-ai-trading-agent
+Environment=ALGO_BOOT_HEALTH_DELAY_SEC=90
+EnvironmentFile=-/etc/algo.env
+ExecStartPre=/usr/bin/sleep ${ALGO_BOOT_HEALTH_DELAY_SEC}
+ExecStart=/usr/bin/python3.12 -m src.boot_health
+User=algosphere
+Group=algosphere
+TimeoutStartSec=180
+
+# Run once at boot and do not restart-loop. Operators can invoke repair mode
+# manually with ./bin/algo boot-health --repair after inspecting the report.
+Restart=no
+NoNewPrivileges=true
+PrivateTmp=false
+
+[Install]
+WantedBy=multi-user.target

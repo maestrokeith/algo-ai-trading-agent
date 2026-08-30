@@ -1,0 +1,12 @@
+[Unit]
+Description=Run AlgoSphere startup artifact validation after market open
+
+[Timer]
+# Host timezone should be America/New_York.
+OnCalendar=Mon..Fri 09:35:00
+AccuracySec=60
+Persistent=false
+Unit=algosphere-ops-startup-validation.service
+
+[Install]
+WantedBy=timers.target

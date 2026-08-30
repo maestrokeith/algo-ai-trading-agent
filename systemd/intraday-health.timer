@@ -1,0 +1,11 @@
+[Unit]
+Description=Run AlgoSphere intraday health snapshot every 10 minutes
+
+[Timer]
+OnCalendar=*:0/10
+Persistent=true
+Unit=intraday-health.service
+
+[Install]
+WantedBy=timers.target
+

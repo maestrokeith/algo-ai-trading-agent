@@ -1,0 +1,15 @@
+[Unit]
+Description=AlgoSphere Level 1.5 silent health check
+Documentation=file:/opt/algosphere/algo-ai-trading-agent/docs/OPERATIONS.md
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/algosphere/algo-ai-trading-agent
+Environment=PYTHONPATH=/opt/algosphere/algo-ai-trading-agent
+ExecStart=/usr/bin/bash /opt/algosphere/algo-ai-trading-agent/scripts/check_algo_health.sh
+User=algosphere
+Group=algosphere
+
+# Reporting-only safety: diagnostics and GitHub health issues only.
+NoNewPrivileges=true
+PrivateTmp=false

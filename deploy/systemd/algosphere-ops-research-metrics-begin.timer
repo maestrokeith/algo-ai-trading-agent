@@ -1,0 +1,12 @@
+[Unit]
+Description=Run AlgoSphere begin-day research metrics capture at 09:25 ET
+
+[Timer]
+# Host timezone should be America/New_York.
+OnCalendar=Mon..Fri 09:25:00
+AccuracySec=60
+Persistent=false
+Unit=algosphere-ops-research-metrics-begin.service
+
+[Install]
+WantedBy=timers.target

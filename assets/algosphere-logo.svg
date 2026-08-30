@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="algosphereTitle">
+  <title id="algosphereTitle">AlgoSphere</title>
+  <defs>
+    <linearGradient id="algosphereSphere" x1="18%" y1="12%" x2="82%" y2="92%">
+      <stop offset="0%" stop-color="#1e88e5"/>
+      <stop offset="55%" stop-color="#0d47a1"/>
+      <stop offset="100%" stop-color="#01579b"/>
+    </linearGradient>
+    <linearGradient id="algosphereOrbit" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#4dd0e1" stop-opacity="0.35"/>
+      <stop offset="50%" stop-color="#80deea" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#4dd0e1" stop-opacity="0.35"/>
+    </linearGradient>
+  </defs>
+  <!-- sphere -->
+  <circle cx="64" cy="64" r="54" fill="url(#algosphereSphere)"/>
+  <!-- orbit ring -->
+  <ellipse
+    cx="64"
+    cy="64"
+    rx="62"
+    ry="30"
+    fill="none"
+    stroke="url(#algosphereOrbit)"
+    stroke-width="3"
+    transform="rotate(-24 64 64)"
+  />
+  <!-- algo curve -->
+  <path
+    d="M 30 76 L 46 58 L 62 70 L 80 46 L 98 52"
+    fill="none"
+    stroke="#e1f5fe"
+    stroke-width="4"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    opacity="0.95"
+  />
+  <!-- endpoint -->
+  <circle cx="98" cy="52" r="5" fill="#fff" opacity="0.95"/>
+</svg>

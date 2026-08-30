@@ -1,0 +1,14 @@
+[Unit]
+Description=AlgoSphere premarket readiness report
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/algosphere/algo-ai-trading-agent
+Environment=PYTHONPATH=/opt/algosphere/algo-ai-trading-agent
+ExecStart=/usr/bin/python3 /opt/algosphere/algo-ai-trading-agent/scripts/run_ops_workflow.py premarket-ready --user live_bot
+User=algosphere
+Group=algosphere
+
+# Read-only validation: checks local premarket artifacts and writes reports/logs.
+NoNewPrivileges=true

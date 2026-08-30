@@ -1,0 +1,265 @@
+name: Codex Auto-Fix PR
+
+on:
+  issues:
+    types:
+      - opened
+      - labeled
+      - edited
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  codex-auto-fix:
+    name: Generate Codex Auto-Fix PR
+    runs-on: ubuntu-latest
+    # Disabled: local laptop processor now handles Codex auto-fix PR generation
+    # without API-key spend. See scripts/process_codex_issues_local.sh.
+    if: >-
+      false &&
+      contains(github.event.issue.labels.*.name, 'codex') &&
+      contains(github.event.issue.labels.*.name, 'auto-fix') &&
+      !contains(github.event.issue.labels.*.name, 'needs-human-review')
+
+    env:
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      ISSUE_TITLE: ${{ github.event.issue.title }}
+      BRANCH_NAME: codex/issue-${{ github.event.issue.number }}-auto-fix
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Mark Codex auto-fix started
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh issue edit "$ISSUE_NUMBER" --add-label "codex-running"
+          gh issue comment "$ISSUE_NUMBER" --body "Codex auto-fix started for issue #${ISSUE_NUMBER}. This workflow will create a pull request only; it will not merge, deploy, or restart services."
+
+      - name: Check duplicate branch or pull request
+        id: duplicate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          duplicate="false"
+          reason=""
+          if git ls-remote --exit-code --heads origin "$BRANCH_NAME" >/dev/null 2>&1; then
+            duplicate="true"
+            reason="branch ${BRANCH_NAME} already exists"
+          fi
+          existing_pr="$(gh pr list --state open --head "$BRANCH_NAME" --json number,url --jq '.[0].url // empty')"
+          if [ -n "$existing_pr" ]; then
+            duplicate="true"
+            reason="open pull request already exists: ${existing_pr}"
+          fi
+          issue_pr="$(gh pr list --state open --search "#${ISSUE_NUMBER}" --json number,url --jq '.[0].url // empty')"
+          if [ -n "$issue_pr" ]; then
+            duplicate="true"
+            reason="open pull request already references issue #${ISSUE_NUMBER}: ${issue_pr}"
+          fi
+          echo "duplicate=${duplicate}" >> "$GITHUB_OUTPUT"
+          echo "reason=${reason}" >> "$GITHUB_OUTPUT"
+          if [ "$duplicate" = "true" ]; then
+            gh issue comment "$ISSUE_NUMBER" --body "Codex auto-fix skipped: ${reason}."
+          fi
+
+      - name: Stop on duplicate
+        if: steps.duplicate.outputs.duplicate == 'true'
+        run: |
+          set -euo pipefail
+          echo "${{ steps.duplicate.outputs.reason }}"
+
+      - name: Read issue and build prompt
+        if: steps.duplicate.outputs.duplicate != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh issue view "$ISSUE_NUMBER" --json number,title,body,labels,url > /tmp/codex_issue.json
+          python scripts/build_codex_issue_prompt.py \
+            --issue-json /tmp/codex_issue.json \
+            --output /tmp/codex_prompt.txt
+
+      - name: Create branch
+        if: steps.duplicate.outputs.duplicate != 'true'
+        run: |
+          set -euo pipefail
+          git checkout -B "$BRANCH_NAME"
+
+      - name: Install Codex
+        if: steps.duplicate.outputs.duplicate != 'true'
+        run: |
+          set -euo pipefail
+          if ! command -v codex >/dev/null 2>&1; then
+            npm install -g @openai/codex
+          fi
+          codex --version
+
+      - name: Verify Codex secret
+        if: steps.duplicate.outputs.duplicate != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${OPENAI_API_KEY:-}" ]; then
+            gh issue edit "$ISSUE_NUMBER" --add-label "needs-human-review"
+            gh issue comment "$ISSUE_NUMBER" --body "Codex auto-fix cannot run because the OPENAI_API_KEY repository secret is not configured. Add the secret or handle this issue manually."
+            exit 1
+          fi
+
+      - name: Run Codex
+        if: steps.duplicate.outputs.duplicate != 'true'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.codex"
+          cat > "$HOME/.codex/auth.json" <<EOF
+          {
+            "OPENAI_API_KEY": "${OPENAI_API_KEY}"
+          }
+          EOF
+          scripts/run_codex_in_actions.sh /tmp/codex_prompt.txt /tmp/codex_result.txt
+
+      - name: Detect Codex changes
+        if: steps.duplicate.outputs.duplicate != 'true'
+        id: changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            gh issue edit "$ISSUE_NUMBER" --add-label "needs-human-review"
+            gh issue comment "$ISSUE_NUMBER" --body "Codex completed without code changes. Marking this issue for human review."
+            exit 0
+          fi
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          git status --short
+          gh issue comment "$ISSUE_NUMBER" --body "Codex produced file changes for issue #${ISSUE_NUMBER}. Validation is starting."
+
+      - name: Run validation
+        if: steps.duplicate.outputs.duplicate != 'true' && steps.changes.outputs.has_changes == 'true'
+        id: validation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          {
+            validation_rc=0
+            echo "$ bash -n scripts/report_algo_failure_to_github.sh"
+            bash -n scripts/report_algo_failure_to_github.sh
+            rc=$?
+            echo "[exit_code=$rc]"
+            [ "$rc" -eq 0 ] || validation_rc=$rc
+            echo "$ bash -n scripts/check_algo_health.sh"
+            bash -n scripts/check_algo_health.sh
+            rc=$?
+            echo "[exit_code=$rc]"
+            [ "$rc" -eq 0 ] || validation_rc=$rc
+            echo "$ python -m py_compile scripts/analyze_algo_health_report.py"
+            python -m py_compile scripts/analyze_algo_health_report.py
+            rc=$?
+            echo "[exit_code=$rc]"
+            [ "$rc" -eq 0 ] || validation_rc=$rc
+            echo "$ PYTHONPATH=. pytest tests/test_failure_reporter.py tests/test_algo_health_check.py tests/test_algo_health_analyzer.py -v"
+            PYTHONPATH=. pytest tests/test_failure_reporter.py tests/test_algo_health_check.py tests/test_algo_health_analyzer.py -v
+            focused_rc=$?
+            echo "[exit_code=$focused_rc]"
+            [ "$focused_rc" -eq 0 ] || validation_rc=$focused_rc
+            echo "$ PYTHONPATH=. pytest tests/ -q"
+            PYTHONPATH=. pytest tests/ -q
+            full_rc=$?
+            echo "[exit_code=$full_rc]"
+            [ "$full_rc" -eq 0 ] || validation_rc=$full_rc
+            exit "$validation_rc"
+          } > /tmp/codex_validation.log 2>&1
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+            gh issue edit "$ISSUE_NUMBER" --add-label "codex-validation-failed"
+            {
+              echo "Codex validation failed for issue #${ISSUE_NUMBER}. No pull request was opened."
+              echo
+              echo '```'
+              tail -n 120 /tmp/codex_validation.log
+              echo '```'
+            } > /tmp/codex_validation_comment.md
+            gh issue comment "$ISSUE_NUMBER" --body-file /tmp/codex_validation_comment.md
+            exit 1
+          fi
+          echo "passed=true" >> "$GITHUB_OUTPUT"
+          gh issue comment "$ISSUE_NUMBER" --body "Codex validation passed for issue #${ISSUE_NUMBER}."
+
+      - name: Commit changes
+        if: steps.duplicate.outputs.duplicate != 'true' && steps.changes.outputs.has_changes == 'true' && steps.validation.outputs.passed == 'true'
+        run: |
+          set -euo pipefail
+          git add -A
+          git commit -m "Codex auto-fix for issue #${ISSUE_NUMBER}"
+
+      - name: Push branch
+        if: steps.duplicate.outputs.duplicate != 'true' && steps.changes.outputs.has_changes == 'true' && steps.validation.outputs.passed == 'true'
+        run: |
+          set -euo pipefail
+          git push --set-upstream origin "$BRANCH_NAME"
+
+      - name: Open pull request
+        if: steps.duplicate.outputs.duplicate != 'true' && steps.changes.outputs.has_changes == 'true' && steps.validation.outputs.passed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          pr_body="$(mktemp)"
+          {
+            echo "Fixes #${ISSUE_NUMBER}"
+            echo
+            echo "## Summary"
+            if [ -s /tmp/codex_result.txt ]; then
+              cat /tmp/codex_result.txt
+            else
+              echo "Codex generated changes for this issue."
+            fi
+            echo
+            echo "## Validation"
+            echo '```'
+            cat /tmp/codex_validation.log
+            echo '```'
+            echo
+            echo "## Safety"
+            echo "- Pull request only; no merge was performed."
+            echo "- No live service restart or deploy was performed."
+            echo "- No production secrets or broker credentials were used."
+            echo "- Requires human review before merge."
+          } > "$pr_body"
+          pr_url="$(gh pr create \
+            --base "${{ github.event.repository.default_branch }}" \
+            --head "$BRANCH_NAME" \
+            --title "Codex auto-fix: ${ISSUE_TITLE}" \
+            --body-file "$pr_body")"
+          gh issue edit "$ISSUE_NUMBER" --add-label "codex-pr-opened"
+          gh issue comment "$ISSUE_NUMBER" --body "Codex auto-fix PR opened: ${pr_url}"
+
+      - name: Comment workflow failure
+        if: failure() && steps.duplicate.outputs.duplicate != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh issue comment "$ISSUE_NUMBER" --body "Codex auto-fix workflow failed before opening a pull request. Check the GitHub Actions logs for details. No merge, deploy, or live service change was performed."

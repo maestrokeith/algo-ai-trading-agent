@@ -1,0 +1,12 @@
+[Unit]
+Description=Run AlgoSphere end-day research metrics capture at 16:05 ET
+
+[Timer]
+# Host timezone should be America/New_York.
+OnCalendar=Mon..Fri 16:05:00
+AccuracySec=60
+Persistent=false
+Unit=algosphere-ops-research-metrics-end.service
+
+[Install]
+WantedBy=timers.target

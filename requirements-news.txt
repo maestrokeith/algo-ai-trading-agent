@@ -1,0 +1,4 @@
+# Optional: NewsAPI + FinBERT sentiment (install in same venv as main app)
+requests>=2.28.0
+transformers>=4.36.0
+torch>=2.0.0

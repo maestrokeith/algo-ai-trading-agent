@@ -1,0 +1,9 @@
+[Unit]
+Description=AlgoSphere read-only intraday health snapshot
+
+[Service]
+Type=oneshot
+User=algosphere
+WorkingDirectory=/opt/algosphere/algo-ai-trading-agent
+Environment=PYTHONPATH=/opt/algosphere/algo-ai-trading-agent
+ExecStart=/opt/algosphere/algo-ai-trading-agent/bin/algo intraday-health --live --since "30 min ago" --json

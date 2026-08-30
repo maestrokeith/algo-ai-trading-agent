@@ -1,0 +1,12 @@
+[Unit]
+Description=Run AlgoSphere premarket readiness check at 09:20 ET
+
+[Timer]
+# Host timezone should be America/New_York.
+OnCalendar=Mon..Fri 09:20:00
+AccuracySec=60
+Persistent=false
+Unit=algosphere-ops-premarket-ready.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,36 @@
+[Unit]
+Description=Run AlgoSphere premarket intelligence every 12 minutes before open
+
+[Timer]
+# Requires the host timezone to be America/New_York, or set systemd timezone
+# handling externally. The collection script also enforces a 05:15-09:25 ET
+# window, so late/manual invocations exit without refreshing artifacts.
+OnCalendar=Mon..Fri 05:15:00
+OnCalendar=Mon..Fri 05:27:00
+OnCalendar=Mon..Fri 05:39:00
+OnCalendar=Mon..Fri 05:51:00
+OnCalendar=Mon..Fri 06:03:00
+OnCalendar=Mon..Fri 06:15:00
+OnCalendar=Mon..Fri 06:27:00
+OnCalendar=Mon..Fri 06:39:00
+OnCalendar=Mon..Fri 06:51:00
+OnCalendar=Mon..Fri 07:03:00
+OnCalendar=Mon..Fri 07:15:00
+OnCalendar=Mon..Fri 07:27:00
+OnCalendar=Mon..Fri 07:39:00
+OnCalendar=Mon..Fri 07:51:00
+OnCalendar=Mon..Fri 08:03:00
+OnCalendar=Mon..Fri 08:15:00
+OnCalendar=Mon..Fri 08:27:00
+OnCalendar=Mon..Fri 08:39:00
+OnCalendar=Mon..Fri 08:51:00
+OnCalendar=Mon..Fri 09:03:00
+OnCalendar=Mon..Fri 09:15:00
+OnCalendar=Mon..Fri 09:25:00
+RandomizedDelaySec=180
+AccuracySec=60
+Persistent=false
+Unit=algosphere-premarket.service
+
+[Install]
+WantedBy=timers.target

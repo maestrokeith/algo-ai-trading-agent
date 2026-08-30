@@ -1,0 +1,2928 @@
+# Algorithmic Trading App - Default Configuration
+# Override via environment or config file per environment.
+
+# Risk book mode (``portfolio.risk_book_mode``): at load time applies max gross long MV / equity and
+# cash reserve presets (also syncs ``adaptive.max_exposure_by_regime`` + ``cash_management.reserve_by_regime``).
+# Use ``custom`` to keep explicit YAML only. Gross cap can exceed 100% of equity when
+# ``adaptive.max_exposure_frac_ceiling`` / portfolio overrides allow (e.g. strong-bullish book).
+#
+# | Mode       | Max gross | Cash reserve (vs equity, stock BP planning) |
+# | ---------- | --------- | ------------------------------------------- |
+# | safe       | 85%       | 15%                                         |
+# | balanced   | 95%       | 5%                                          |
+# | aggressive | 100%      | ~1% (bearish regime rows may reserve slightly more) |
+
+# ---------------------------------------------------------------------------
+# Regime helpers (live loop — see scripts/run_alpaca_loop.py)
+# ---------------------------------------------------------------------------
+database:
+  enabled: true
+  type: sqlite
+  path: data/algo_live.db
+  journal_mode: WAL
+  synchronous: NORMAL
+  busy_timeout_ms: 5000
+
+trading_control:
+  # Explicit operating mode. Allowed: live, paper, shadow, entries-disabled.
+  mode: live
+  runtime_profile: controlled_live_equity
+  adaptive_relaxation:
+    production_auto_apply: false
+  max_runtime_failures_before_entry_block: 3
+  latency_thresholds:
+    max_underlying_quote_age_seconds: 60
+    max_option_quote_age_seconds: 30
+    max_signal_age_seconds: 300
+    max_signal_to_order_seconds: 120
+    max_news_age_seconds: 3600
+  strategy_readiness:
+    minimum_reconciled_samples: 30
+    minimum_profit_factor: 1.2
+    maximum_drawdown: 0
+    maximum_spread_cost_pct_of_pnl: 25
+  strategy_states:
+    trend_long: LIVE
+    momentum_breakout: SHADOW
+    dynamic_no_catalyst: SHADOW
+    news_only: DISABLED
+    options_live: DISABLED
+    options_paper: DISABLED
+  live_pilot:
+    enabled: false
+    allowed_strategies:
+      - trend_long
+    preexisting_position_allowlist:
+      - AMZN
+      - NFLX
+    max_trades_per_day: 1
+    max_entry_submissions_per_day: 1
+    max_entry_fills_per_day: 1
+    max_open_positions: 1
+    max_notional_per_trade: 100
+    max_total_deployed_notional: 100
+    max_daily_loss_usd: 25
+    allow_short_selling: false
+    allow_add_to_existing: false
+    allow_replacements: false
+    allow_reallocation: false
+    allow_overnight: false
+    eod_flatten_required: true
+  controlled_live_equity:
+    enabled: true
+    max_managed_positions: 10
+    max_single_order_notional_pct: 0.12
+    max_single_order_notional: 5000
+    max_symbol_exposure_pct: 15
+    strategy_allocation_cap_pct: 60
+    portfolio_exposure_cap_pct: 85
+    stock_capital_pct: 60
+    min_cash_reserve_pct: 12
+    daily_loss_limit_pct: 3
+
+contract_quality:
+  maximum_spread_percentage: 10
+  minimum_volume: 100
+  minimum_open_interest: 500
+  minimum_delta: 0.35
+  maximum_strike_distance: 5
+  minimum_dte: 7
+  maximum_dte: 45
+  maximum_quote_age: 30
+  maximum_expected_slippage: 0.05
+
+regime:
+  # When market_regime condition is neutral (score 2–3), floor trend-long sizing so the book
+  # does not go effective-zero from stacked multipliers; keeps small participation with bounded risk.
+  neutral_probe:
+    enabled: true
+    size_multiplier: 0.3
+  score_3:
+    max_new_positions: 3
+
+# Min cash reserve (%% of equity held back from deployable buying power) by market-regime when ``market_regime`` supplies score/condition in the live loop. Overrides ``portfolio.min_cash_reserve_pct`` for that pass when a leg resolves; ``defensive`` engine label may use the ``bearish`` row.
+# Score ≥4 = bullish, 2–3 = neutral, 0–1 = bearish. Integer/fraction/``"8%"`` allowed per value.
+cash_management:
+  # When ``portfolio.risk_book_mode`` is safe/balanced/aggressive, replaced at load (see src/risk_book_mode.py).
+  reserve_by_regime:
+    bullish: 5
+    neutral: 8
+    bearish: 20
+
+# Proactive rebalancing in ``run_alpaca_loop`` (rfc = rebalance_free_capital). When ``trigger`` is
+# set, you do not sell *only* because broker cash is below min_cash_target unless ``low_cash``/``min_cash_target``
+# appears. Partial rfc (trim weakest) runs only when ``signal_deterioration`` is present *and* live
+# health is below entry strength by ``signal_deterioration_min_gap``. ``stop_loss``/``take_profit`` align
+# with the exit engine (no extra loop paths). **stronger_incoming** / **rotate** enables full exit of
+# weakest when an incoming name is stronger (rfc full-rotate mode).
+rebalance:
+  #trigger: "signal_deterioration OR stop_loss OR take_profit"
+  trigger: "stop_loss OR take_profit"
+  signal_deterioration_min_gap: 0.05
+
+# Live loop cadence (run_alpaca_loop): overrides broker.* when set; 10–15 min exits reduces over-reaction vs 5 min.
+timing:
+  # Exit pass cadence (5–10 min typical for responsive trims/stops). Kept ≤ entry_interval so entries still get CPU.
+  exit_interval_min: 15
+  entry_interval_min: 10
+  # When any user is in reduce_only (gross book over ``risk.over_exposure_levels.high`` / exposure gate), main loop
+  # sleep uses this exit interval minutes instead of ``exit_interval_min`` so stocks/options are re-evaluated sooner.
+  reduce_only_mode:
+    exit_interval_minutes: 8
+
+live_loop:
+  loop_sleep_seconds_live: 120
+  loop_sleep_seconds_paper: 15
+  loop_sleep_seconds_paper_options: 5
+  fast_poll_windows: []
+
+# When many valid entry paths still fail on caps (spread, exposure, symbol/sector limits), relax those caps
+# after consecutive cap-style rejections (see src/adaptive.py, run_alpaca_loop).
+adaptive:
+  relax_caps_if_entry_blocked: true
+  relax_factor: 1.2
+  # Require this many consecutive cap-block outcomes before relax_factor applies (default 2).
+  min_consecutive_cap_blocks: 2
+  # Extra cap headroom (spread / exposure / sizing) when composite entry strength is high (see src/adaptive.py).
+  allow_cap_override_on_strong_signal: true
+  override_multiplier: 1.2
+  # Minimum strength in [0,1] to qualify (default 0.82 if omitted).
+  # min_strength_for_cap_override: 0.82
+  # Optional: restrict to these tickers (omit for all); same idea as strong_signal_cap_relief.relief_symbols.
+  # cap_override_relief_symbols: [ "NVDA", "SPY" ]
+  # Scale per-bucket long MV / equity cap (``risk`` bucket lines) by regime. Score 2–3 = ``neutral``; 4+ bullish; 0–1 ``bearish`` (``defensive`` in engine) unless ``bearish`` key is set in YAML.
+  bucket_cap_multiplier:
+    neutral: 1.2
+    bullish: 1.5
+    bearish: 0.8
+  # Max gross long book (fraction of equity) by regime; applied in ``run_entry_gates`` (see :func:`src.adaptive.adaptive_effective_max_total_exposure`). Falls back to ``portfolio.exposure_gates.max_total_exposure_frac`` if the leg is missing.
+  # When ``portfolio.risk_book_mode`` is set, replaced at load — values below are for ``custom`` / docs.
+  # Values may exceed 1.0 up to ``max_exposure_frac_ceiling`` (e.g. 110% when score≥4 bullish leg — see below).
+  max_exposure_frac_ceiling: 1.35
+  max_exposure_by_regime:
+    bullish: 0.98
+    neutral: 0.95
+    bearish: 0.85
+  # When regime score ≥ 4 and the resolved leg is **bullish**, floor gross cap at this fraction (110%%).
+  bullish_score_4_plus_max_exposure_frac: 1.20
+  # Per exact ``regime_score``: ``max_exposure`` is a **floor** with the leg (higher of the two).
+  # If the neutral leg already exceeds this, there is no change. When you lower ``neutral`` (e.g. to
+  # ~0.89 in a user override) but want score 3 a bit looser, set ``regime_3`` to 0.92.
+  regime_3:
+    max_exposure: 0.92
+  # When the entry wave has this many high-strength names (``execution.strong_signal_strength_min``), add ``boost_amount`` to the effective gross cap (capped at 1.0). Live loop only (see ``entry_wave_strong_signal_count`` in ``run_alpaca_loop``).
+  boost_exposure_if_many_signals: true
+  signal_threshold: 5
+  boost_amount: 0.02
+
+# Top-K allocation (CRITICAL): rank passing trend-longs, take top K only — not every pass.
+# With ``rank_by_signal_strength: true``, Top-K uses ``rank_top_k_by``: ``momentum_rs_volume`` (momentum+RS+volume) or ``strength_eff`` (legacy single score).
+# Midpoint of range → K (``"3-5"`` → 4). Unified cap via ``src.allocation_config.effective_ranked_signals_cap``.
+# When ``rank_by_signal_strength`` is false, use ``portfolio.signal_ranking.max_signals_per_loop`` instead.
+allocation:
+  rank_by_signal_strength: true
+  rank_top_k_by: momentum_rs_volume
+  allow_core_rebuild_buys: true
+  # One of: int, ``"2-3"`` / ``"5 – 8"`` range, ``[2, 3]``, or ``allocate_top_n_min`` + ``allocate_top_n_max``.
+  # Keep this tight to avoid capital fragmentation across many marginal names.
+  allocate_top_n: "2-3"
+  core_rebuild:
+    enabled: true
+    underweight_threshold_pct: 10
+    max_rebuild_notional_pct: 2
+    max_symbols_per_cycle: 2
+    require_non_bearish_regime: true
+    require_spread_ok: true
+    allow_when_below_mas: true
+    min_cash_reserve_pct: 10
+    allow_same_day_rebuild_after_sell: false
+    churn_guard:
+      enabled: true
+      max_hold_minutes: 30
+      cooldown_minutes: 180
+      lookback_days: 3
+
+# Operator alias for per-cycle allocator throughput. Mirrors the active ranked-entry caps used
+# by ``alpha.max_new_positions_per_cycle`` and ``risk.max_new_positions_per_cycle``.
+allocator:
+  allow_no_trade_cycles: true
+  selected_must_execute: false
+  if_no_actions_cycles: 2
+  fallback:
+    enforce_diversity: true
+    pick_top_n: 2
+    size_pct: 0.1
+  max_new_positions_per_cycle: 3
+  max_new_positions_neutral: 3
+  minimum_cash_to_deploy_pct: 0.05
+  min_trade_notional: 1200
+  pick_top_n_signals: 3
+  reentry_cooldown_after_exit_minutes: 60
+  sort_by: momentum
+  rank_by: [momentum, volume_spike, distance_from_ema]
+
+correlation:
+  max_per_group: 2
+
+# Live entry scan: cap distinct symbols + beta load per correlation bucket (see ``src/portfolio_intelligence.py``).
+# ``correlation_group_priority`` resolves overlapping lists (e.g. semiconductors before tech for NVDA).
+portfolio_intelligence:
+  enabled: true
+  # 0 = use ``correlation.max_per_group``; set explicitly to override for PI only.
+  max_positions_per_correlation_group: 2
+  # Sum of (position MV / equity) * symbol_beta for the bucket; 0 = off. Example: 0.45 ≈ 45% "beta book" in that theme.
+  max_beta_units_per_group: 0.55
+  correlation_group_priority:
+    - semiconductors
+    - tech
+    - indices
+    - defensives
+    - cyclicals
+  correlation_groups:
+    semiconductors:
+      - NVDA
+      - AVGO
+      - AMD
+      - SMH
+      - SOXL
+      - SOXS
+      - TSM
+      - INTC
+      - MU
+      - QCOM
+      - MRVL
+      - AMAT
+      - LRCX
+      - KLAC
+      - ON
+  symbol_beta:
+    _default: 1.0
+    NVDA: 1.45
+    AMD: 1.65
+    AVGO: 1.15
+    SMH: 1.35
+    SOXL: 2.8
+
+groups:
+  indices: [SPY, IWM, DIA]
+  sectors: [XLE, XLI, XLY, XLP, XLU]
+
+correlation_groups:
+  tech: [AAPL, MSFT, NVDA, GOOGL, AMZN, SMH]
+  indices: [SPY, IWM, DIA]
+  defensives: [KO, PEP, XLP, WMT]
+  cyclicals: [XLI, XLE, XLF, XLY]
+
+signals:
+  max_new_positions: 3
+  rank_by:
+    - momentum_5m
+    - volume_spike
+    - distance_from_20ema
+
+# Missing tickers in SYMBOL_SECTOR / user maps: bucket for exposure; optional sector-cap skip in position sizing.
+sector:
+  default_sector: "other"
+  # When false, :class:`PositionSizer` does not apply per-sector % cap for symbols not listed in the sector map.
+  enforce_caps_on_unknown: false
+
+# Live entry scan (run_alpaca_loop): respect first-prints window; scan cadence from timing.entry_interval_min (else broker).
+entries:
+  enable_new_entries: true
+  allow_add_to_existing_positions: true
+  news_override_trend_prefilter_enabled: true
+  news_override_min_score: 8
+  max_day_loss_pct_for_news_override: -5.0
+  news_override_vwap_reclaim_bars: 5
+  avoid_new_entries_before: "09:40"
+  # Last regular-session hour (16:00 ET close): no new longs at/after this time. Pairs with avoid_last_hour_new_entries.
+  avoid_new_entries_after: "15:10"
+  # When > 0, skip the entire new-entry pass if buying power is below this $ amount (0 = off).
+  # ~$25k, 5-8 names: require meaningful clips (avoids 10-15 micro positions).
+  min_trade_size: 1200
+  # When true, entry skips print one JSON object per line (symbol, signal, decision, reason, regime, …).
+  structured_skip_logs: true
+  # Per-symbol live scan cooldowns: use top-level ``cooldowns`` (default_minutes + leader_overrides).
+  # Legacy explicit key — wins over ``symbol_cooldown_minutes`` when set (non-empty).
+  # per_symbol_buy_cooldown_min: 10
+  # Sell: after a recorded equity exit (stop or profit path in engine state), wait before new buys. Bypass uses
+  # strategy.strong_trend_reconfirm_bypass_cooldown + strong_trend_reconfirm_ok (same idea as engine exit cooldowns).
+  # After a sell exit: wait before new buys on that symbol (maps operator block_reentry_after_exit_minutes).
+  per_symbol_sell_cooldown_min: 20
+  # Operator aliases for execution-layer structured exit cooldown tiers.
+  symbol_cooldown_stock_minutes: 10
+  symbol_cooldown_etf_minutes: 10
+  # Legacy alias for buy cooldown (used only if per_symbol_buy_cooldown_min is omitted or empty).
+  # min_minutes_since_last_entry_for_symbol: 20
+  # Pullback re-entry: top-level ``reentry.allow_pullback_reentry`` → ``allow_reentry_on_pullback`` (config_loader).
+  reentry_price_buffer_pct: 0.35
+  # Add-on buys (portfolio.allow_add): require daily close < last_entry_price × this (e.g. 0.98). Omit or use 0 or ≥1 to disable.
+  add_on_max_price_ratio_of_last_entry: 0.98
+  # If true, add-ons may skip the pullback rule when the trend MA filter still passes or news+volume buy applies.
+  add_on_allow_when_momentum_continues: true
+  # When > 0, skip trend-long work for a symbol if its current long equity |market_value| exceeds this USD (0 = off).
+  max_position_market_value_usd: 0
+  # Cancel Alpaca open orders older than this many minutes before each entry scan (0 = off).
+  cancel_orders_older_than_minutes: 10
+  # Legacy alias (used only if cancel_orders_older_than_minutes is unset/empty).
+  # cancel_stale_open_orders_minutes: 0
+
+# Minutes between entry-scan buys per symbol (tracker); leaders can use shorter windows.
+cooldowns:
+  default_minutes: 45
+  leader_overrides:
+    SMH: 5
+    NVDA: 10
+    GOOGL: 15
+    AMZN: 15
+    AAPL: 15
+    SPY: 20
+    IWM: 20
+    PLTR: 5
+    SOUN: 5
+    AI: 5
+    QQQ: 15
+    MU: 10
+
+# Merged into ``strategy.exits`` (see config_loader). Partial / broker trims only when unrealized
+# gain ≥ partial_trim_trigger_pct; full take-profit at take_profit_pct (after smart scale tiers when enabled).
+# Stops, time exits, and trailing (price break) are not gated. Risk (kill-switch) and hard stops unchanged.
+# Wider targets: fewer full exits on small noise, room for larger wins (tune with ``strategy.exits.stop_loss_pct``).
+exit:
+  take_profit_pct: 8.0
+  partial_trim_trigger_pct: 10.0
+  disable_partial_trim_below_gross_pct: 0.85
+  # Defer P/L, risk-budget, and cap *trims* while daily MA trend filter still passes (src/live/exits.py).
+  require_signal_break_for_trim: true
+
+# Per-symbol churn control (live equity exits + tracker buys). Persisted: data/position_state_<user>.json
+# States used in code: HOLD, TRIMMED, COOLDOWN (ENTERED / EXIT_PENDING reserved for future wiring).
+# - After an equity BUY (tracker add/merge): HOLD for hold_after_buy_minutes — discretionary sells skipped.
+# - After an equity SELL: TRIMMED if still long, else COOLDOWN; discretionary sells blocked until cooldown ends.
+# - Stop-like exits (stop_loss, option_stop_loss, trail) are never blocked by this layer.
+# Churn (CRITICAL): set hold_after_buy in the 60–120 min band when this layer is enabled.
+position_states:
+  enabled: false
+  hold_after_buy_minutes: 90
+  cooldown_after_sell_minutes: 20
+
+# When the exit pass and capital_allocator disagree on the same symbol in one loop iteration,
+# lower number wins (see src/decision_priority.py, LiveExitContext.note_decision_intent).
+decision_priority:
+  stop_loss: 1
+  take_profit: 2
+  exposure_trim: 3
+  rebalance: 4
+  new_entry: 5
+
+# Composite symbol scoring (see src/scoring_engine.py).
+scoring:
+  enabled: true
+  # top_n: first N by rank, then require total >= min_score.
+  # threshold: all names with total >= min_score (by rank), up to N.
+  # ranked_top_n: top N by composite score (min_score ignored) — typical 10–15.
+  selection_mode: ranked_top_n
+  min_score: 8
+  # Prefer ``top_n_candidates`` over legacy ``max_candidates`` (same N for all selection_mode values).
+  top_n_candidates: 25
+  # max_candidates: 12   # legacy alias; used only if top_n_candidates is omitted
+  # When broker cash ≥ portfolio.high_cash_deploy_pct of equity, overlay these scoring knobs.
+  when_high_cash:
+    min_score: 6
+    top_n_candidates: 30
+  # ScoringEngine currently uses MA20, MA50, MA200, and 20-day average volume.
+  # Defaults preserve the existing 200-bar requirement for every symbol.
+  # Set enable_dynamic_override: true to let dynamic momentum candidates use a
+  # shorter configured minimum while core trend candidates keep core=200.
+  min_history_bars:
+    core: 200
+    dynamic: 200
+    enable_dynamic_override: false
+  weights:
+    trend: 1.0
+    pullback: 1.0
+    volume: 1.0
+    regime: 1.0
+
+# Live trend-long risk (see src/risk_limits.py). Fractions: 0.10 = 10% of equity; values > 1 = percent points.
+# Bucket = signal-ranking tier (SPY/QQQ | NVDA/MSFT | sector ETFs | others) using long stock market value only.
+risk:
+  kill_switch_reentry_cooldown_minutes: 30
+  strong_reentry_threshold: 0.65
+  # Upper bound for single-name stock MV / equity; effective cap = min(this, portfolio symbol cap).
+  # In regime score 4, ``portfolio.capital_allocator.symbol_caps.regime_4`` can replace this line (e.g. 15%%).
+  # Keep aligned with ``portfolio.max_single_position_pct`` and allocator ``symbol_caps.hard`` when not using regime overrides.
+  max_symbol_allocation_pct:
+    default: 15
+    etf: 22
+  # Book-level max gross (%% of equity or 0–1 fraction); merged into exposure gates + gross targets (config_loader).
+  max_total_exposure_pct: 85
+  # Per-SYMBOL_SECTOR sleeve: prefer ``portfolio.max_sector_pct``; optional stricter override here. Stricter of both wins.
+  # sector_cap_pct: 0.30
+  max_bucket_allocation_pct: 0.30
+  # ``tier_3`` = non–mega-cap, non-priority names (see ``risk_buckets`` + signal tier). 0.40–0.50 of equity; default here 0.45.
+  tier_3_cap: 0.45
+  # ``mega_cap_beta`` bucket only (see ``risk_buckets.mega_cap_beta``); overrides ``max_bucket_allocation_pct`` for that bucket.
+  mega_cap_beta_cap: 45
+  # Per-symbol add-on buys per ET day (tracked adds). Alias: ``max_adds_per_symbol_per_day`` (canonical wins if both set).
+  max_addons_per_day: 3
+  min_minutes_between_adds: 10
+  max_new_positions_per_cycle: 5
+  # Per-symbol daily churn (also in ``portfolio_risk``; ``risk`` values apply when portfolio_risk omits them).
+  # Counts **submitted** buy/sell orders per symbol (persisted across loop restarts). Blocks **new entries** only.
+  max_trades_per_symbol_per_day: 4
+  # Full long exit (flat) counts one round trip; blocks further **entries** on that symbol for the ET day.
+  max_round_trips_per_symbol: 2
+  # When long gross MV / equity **multiple** ≥ trigger, RFC gross-cap bulk trim sells ``emergency_deleverage_pct``
+  # of total eligible long ``market_value`` in one pass (greedy, ``bulk_trim_priority`` order); else legacy
+  # equity-tier notional caps (:func:`emergency_bulk_trim_notional_usd`).
+  emergency_deleverage_trigger: 1.30
+  emergency_deleverage_pct: 0.30
+  bulk_trim_priority:
+    - highest_weight
+    - weakest_pnl
+  # In reduce_only mode, when gross long MV / equity **multiple** exceeds threshold (default 1.2), cancel every open order once per heartbeat pass (requires broker.cancel_all_orders).
+  emergency_cancel_all_open_orders: true
+  # emergency_cancel_all_open_orders_gross: 1.2
+  # Live loop exit pass: trim long equity when MV / equity exceeds merged symbol cap + threshold (see src/risk_limits.py).
+  enforce_position_caps_on_hold: true
+  rebalance_on_breach: true
+  rebalance_threshold_pct: 1.0
+  # Gross long MV / equity bands (fractions: 0.95 = 95% of equity). `high` is the default reduce-only
+  # threshold (overrides `portfolio.exposure_gates.overexposed_reduce_only_gross_frac` when this map is set).
+  # See :func:`src.risk_limits.parse_risk_over_exposure_levels` and `gross_exposure_tier`.
+  over_exposure_levels:
+    mild: 0.95
+    high: 1.00
+    critical: 1.05
+  # Post-scan capital allocator: no **buy** legs when gross (long MV / equity) is strictly above this **fraction** (0.94 = 94%%). Omit to disable.
+  no_recycle_above_pct: 0.94
+
+live_risk_protection:
+  consecutive_losing_sessions:
+    enabled: true
+    sessions: 2
+    route: trend_long
+    require_win_rate: 0
+    require_pnl_below: 0
+  intraday_loss_guard:
+    enabled: true
+    stop_new_entries_loss_pct: 0.35
+    flatten_loss_pct: 0.50
+  sleeve_churn_guard:
+    enabled: true
+    weak_exit_threshold: 3
+  profit_protection:
+    enabled: true
+    breakeven_trigger_pct: 0.5
+    trailing_trigger_pct: 1.0
+    trailing_stop_pct: 0.5
+    partial_take_profit_pct: 1.5
+    partial_take_profit_fraction: 0.5
+    time_stop_not_green_minutes: 15
+
+entry_quality:
+  enabled: true
+  scoring_enabled: true
+  threshold:
+    default: 80
+    strong_regime: 75
+    neutral_regime: 80
+    weak_regime: 85
+  market_vwap_penalty: 8
+  strong_news_override: true
+  dynamic_cooldown: true
+  weights:
+    trend: 20
+    pullback: 15
+    momentum: 20
+    volume: 15
+    symbol_vwap: 10
+    market_vwap: 10
+    regime: 5
+    spread: 5
+  max_zero_noncritical_factors: 1
+  unavailable_feature_policy: conservative
+  flexible_entry:
+    enabled: true
+    size_by_score:
+      90: 1.00
+      85: 0.75
+      80: 0.50
+      75: 0.25
+  dynamic_cooldown_minutes:
+    loss_min: 60
+    loss_max: 90
+    small_winner: 30
+    large_winner: 15
+    fresh_catalyst_reduction: 15
+    fresh_catalyst_window_minutes: 120
+  live_min_quality_score: 6
+  paper_min_quality_score: 5
+  confirmation_quality_score: 8
+  weak_regime_live_min_quality_score: 8
+  weak_regime_score_lte: 2
+  weak_regime_paper_size_fraction: 0.5
+  starter_size_fraction: 0.25
+  require_market_vwap: true
+  require_symbol_vwap: true
+  require_sector_confirmation: true
+  max_vwap_extension_pct: 1.5
+  max_atr_extension: 2.0
+  tight_spread_pct: 0.35
+  min_relative_volume: 0.75
+  strong_catalyst_threshold: 6.0
+  dynamic_no_catalyst_min_quality_score: 7
+  relative_strength_top_n_live: 2
+  relative_strength_top_n_paper: 3
+
+# Bucket keys for long-stock MV / equity (see ``risk.tier_N_cap`` / ``risk.mega_cap_beta_cap`` and ``max_bucket_allocation_pct``).
+# Symbols not listed fall back to signal tier keys ``tier_0`` … ``tier_3``. First matching bucket wins.
+risk_buckets:
+  mega_cap_beta: [SPY, XLK, SMH, NVDA, MSFT, AAPL, META, AMZN, GOOGL]
+  financials: [XLF, JPM, BAC, GS, MS, WFC]
+  health: [XLV, LLY, JNJ, ABBV, UNH, ISRG]
+
+# ---------------------------------------------------------------------------
+# 1) Universe & Data
+# ---------------------------------------------------------------------------
+# Traded symbols = universe.symbols minus universe.paused_symbols.
+# Inverse ETFs (SQQQ/SPXS) are configured under universe.bear_etfs only (not counted in regime % unless listed in symbols).
+# Core universe: tighter momentum/leader set for live scans. Defensive staples,
+# slow industrial rotation, and low-vol ETFs are intentionally excluded to reduce churn.
+universe:
+  symbols:
+    # Core ETFs / beta
+    - SPY
+    - QQQ
+    - IWM
+    - XLK
+    - XLF
+    - XLE
+    - XLY
+    - SMH
+    # Mega-cap tech / platform leaders
+    - AAPL
+    - MSFT
+    - NVDA
+    - AMZN
+    - META
+    - GOOGL
+    - AVGO
+    - AMD
+    - ORCL
+    - NFLX
+    # High-liquidity growth / AI / semis
+    - PLTR
+    - CRWD
+    - DDOG
+    - NOW
+    - SNOW
+    - UBER
+    - SHOP
+    - SQ
+    - ARM
+    - MU
+    - ANET
+    - MRVL
+    - SMCI
+    - TSM
+    # Select liquid leaders outside tech
+    - JPM
+    - GS
+    - LLY
+  paused_symbols: []   # add tickers here to exclude from scan/trade
+  # Regime filter: when < 30% above 50D MA = bearish → skip long entries; bear ETFs if breakdown
+  regime_min_pct_above_50d_ma: 0.30
+  # Inverse ETFs: max_positions = max distinct bear tickers held; total notional cap (max_exposure_pct_equity).
+  bear_etfs:
+    symbols:
+      - SQQQ
+      - SPXS
+
+    breakdown:
+      reference_symbol: QQQ
+      ma_period: 50
+      # True = require a *new* daily cross down (prior close >= MA, latest < MA), not merely extended trade below MA.
+      require_fresh_cross_below_ma: true
+
+    prefer_sqqq_when_breakdown_reference_is_qqq: true
+
+    max_positions: 3
+    max_exposure_pct_equity: 30
+    stop_pct: 2.0
+
+    controlled_scaling:
+      enabled: true
+      symbol: SQQQ
+      reference_symbol: QQQ
+      ma_period: 50
+      # Spacing between SQQQ controlled-scaling adds (minutes between scale-ups).
+      cooldown_minutes: 15
+
+      steps:
+        - reference_ma_distance_pct_min: 1.0
+          size_multiplier: 0.40
+        - reference_ma_distance_pct_min: 2.5
+          size_multiplier: 0.30
+        - reference_ma_distance_pct_min: 4.0
+          size_multiplier: 0.30
+
+      require_price_above_last_entry: true
+
+    # After a full SQQQ exit (tracker cleared), optional gates before the next *stock* entry.
+    # Does not block QQQ puts / bearish options (those run before stock). Controlled scaling adds unchanged.
+    sqqq_reentry:
+      enabled: true
+      full_exit_cooldown_minutes: 180   # longer cooldown reduces SQQQ in/out same day under PDT caps
+      # After exit, QQQ must trade below the QQQ daily close recorded at exit (stricter than “still below MA”).
+      require_qqq_close_below_exit_reference: true
+      max_initial_stock_entries_per_et_day: 1        # cap fresh SQQQ stock opens per NY day (scaling adds use other path)
+
+    # Legacy YAML only — run_alpaca_loop does not read this (use controlled_scaling).
+    sqqq_add_on_strong_trend:
+      enabled: false
+      reference_ma_distance_pct_min: 1.5
+      size_multiplier: 0.35
+  # Bearish regime: by default no new trend longs. Optionally allow some, capped:
+  bearish_allow_trend_long_entries: false   # true = still run entry scan when bearish (subject to max below)
+  bearish_max_normal_long_positions: null    # e.g. 4 — max non-inverse long positions when bearish (null = no cap)
+  # When true: if market regime condition is known — bullish/neutral allow trend longs without inverse
+  # hedge; defensive blocks trend longs (use bear/SQQQ path). If condition unknown (scorer off),
+  # legacy rule: require long hedge (strategy_v2.hedging.symbol, default SQQQ).
+  require_sqqq_for_trend_long_entries: false
+  # Minimum liquidity / volume filters
+  min_avg_dollar_volume_30d: 50_000_000
+  min_atr_multiple_for_volume: 0.5   # min volume vs ATR-based expectation
+
+
+
+trading:
+  dynamic:
+    high_conviction_news_override:
+      enabled: true
+      min_catalyst_score: 8.0
+      min_event_score: 7.0
+      min_news_score: 7.0
+      min_relative_volume: 1.5
+      max_catalyst_age_minutes: 180
+      # Controlled entry relaxation only. These thresholds may bypass trend prefilters,
+      # but stop losses, position limits, cash reserves, allocator controls, exposure
+      # controls, and risk controls still run unchanged after the override.
+      thresholds:
+        earnings_beat:
+          min_catalyst_score: 8.0
+          min_event_score: 7.0
+          min_news_score: 7.0
+        analyst_upgrade:
+          min_catalyst_score: 8.0
+          min_event_score: 7.0
+          min_news_score: 7.0
+        acquisition:
+          min_catalyst_score: 8.0
+          min_event_score: 7.0
+          min_news_score: 7.0
+        fda_approval:
+          min_catalyst_score: 8.0
+          min_event_score: 7.0
+          min_news_score: 7.0
+        major_ai_partnership:
+          min_catalyst_score: 8.0
+          min_event_score: 7.0
+          min_news_score: 7.0
+        government_contract:
+          min_catalyst_score: 8.0
+          min_event_score: 7.0
+          min_news_score: 7.0
+      replacement_strength_ratio: 1.05
+      normal_replacement_strength_ratio: 1.2
+      require_positive_sentiment: true
+
+market_data:
+  provider: alpaca
+  # Dynamic scanner quote retry: bounded retries for transient unstable
+  # bid/ask snapshots only. This does not bypass bad quotes, stale quotes,
+  # spread caps, or core/trend behavior. Enabled for this week's paper
+  # dynamic experiment; live_dynamic_quote_retry remains as a legacy alias.
+  dynamic_quote_retry:
+    enabled: true
+    live_enabled: true
+    paper_enabled: true
+    attempts: 2
+    delay_seconds: 0.25
+  live_dynamic_quote_retry:
+    enabled: true
+    attempts: 2
+    delay_seconds: 0.25
+
+
+# Dynamic intraday universe scan / rotation (optional; wire in live loop when implemented).
+dynamic_universe:
+  # Aggressive dynamic mode: let news/momentum names use a larger sleeve and enter on
+  # earlier intraday strength, while keeping volume quality, churn guards, hard stops,
+  # emergency exits, and round-trip protections unchanged.
+  # dynamic_live_loosen_v1: increase dynamic candidate conversion without weakening
+  # quote/liquidity safety. Hard filters unchanged: min_price, max_spread_pct,
+  # execution_max_spread_pct, unstable_quote, and min_avg_volume.
+  enabled: true
+  max_symbols: 30   # alias: top_n
+  exclude_suffixes:
+    - W
+    - WS
+    - WT
+    - U
+    - R
+  refresh_minutes: 10
+  entry_check_interval_minutes: 10
+  exit_check_interval_minutes: 5
+  artifact_history:
+    enabled: true
+    directory: data/dynamic_scan_history
+    retention_days: 30
+  corporate_actions:
+    # Optional Alpaca corporate-action awareness for dynamic scan runners.
+    # Disabled by default; when enabled, reverse splits/mergers are blocked while
+    # lower-severity actions are annotated and allowed.
+    enabled: false
+    lookback_days: 7
+    persist: true
+    persist_dir: data/research/corporate_actions
+  # Paper-only controlled experiment: when enabled, dynamic candidates in paper mode
+  # may use its min_bars instead of the configured dynamic history floor below.
+  paper_min_history_bars_experiment:
+    enabled: true
+    min_bars: 50
+  # Paper-only controlled experiment: when enabled, dynamic candidates in paper mode
+  # use min_realloc_leg instead of minimum_cash_to_deploy for the allocator
+  # deployment floor. Live mode and core/trend-long candidates ignore this.
+  paper_dynamic_min_deploy_experiment:
+    enabled: true
+    use_min_realloc_leg: true
+
+  regime_relax:
+    enabled: true
+    strength_threshold_mult: 0.85
+
+  # dynamic_live_history_180_v1: lower the dynamic-only daily history gate from
+  # 200 to 180 based on June 15 live history-gate research (BTQ 180/200 would
+  # pass; AHMA 163/200 remains blocked). Quote, liquidity, sizing, allocator,
+  # order, and risk gates remain unchanged.
+  min_history_bars: 180
+  # July 1 Phase 1: live-only daily-history floor for scanner-selected
+  # DYNAMIC_ONLY candidates. Core, scoring, trend-long, paper, options, and
+  # non-dynamic-only candidates continue to use their existing history gates.
+  live_min_history_bars: 50
+  # Live-only execution throttle for dynamic weak-catalyst candidates rejected
+  # by the final execution guard. Does not apply to paper, core/trend-long,
+  # exits, sells, or strong-catalyst dynamic candidates.
+  weak_catalyst_execution_cooldown_minutes: 10
+  # Default-off live-only experiment for weak_catalyst_dynamic_non_exceptional_live
+  # stocks. It never applies to options, paper, core/trend-long, exits, or sells;
+  # all normal downstream risk, stop, exposure, spread, ATR, and execution gates remain.
+  live_weak_catalyst_exception_experiment:
+    enabled: false
+    min_price: 8
+    min_gain_pct: 10
+    min_relative_volume: 0.5
+    max_spread_pct: 0.25
+    require_entry_eval_pass: true
+    max_atr_pct: 15
+    max_positions_per_day: 1
+    notional_cap: 300
+    require_no_existing_position: true
+  # Strategy V2 expectancy gate: caps, or explicitly blocks, only
+  # dynamic_momentum_override buy exposure from recent read-only signal
+  # expectancy reports. It does not affect core/trend-long, options, exits,
+  # sells, stop-losses, or any existing risk/quote/spread guards.
+  dynamic_momentum_expectancy_gate:
+    enabled: true
+    live_enabled: false
+    min_expectancy_score: 0.0
+    lookback_days: 5
+    min_samples: 5
+    reduce_only_when_negative: true
+    fallback_allow_if_no_data: true
+    blocked_symbols: []
+    reduced_symbols: []
+    max_notional_when_negative: 300
+
+  min_price: 2
+  max_price: 150
+  max_atr_pct: 15.0
+  min_day_gain_pct: 2.0   # alias: min_gain_pct; dynamic_live_loosen_v1 from 3.0
+  max_day_gain_pct: 80.0  # alias: max_gain_pct
+
+  min_avg_volume: 5000
+  # dynamic_stock_rvol_loosen_v2: guarded stock-only loosen for live and paper
+  # dynamic mode. Hard filters remain unchanged: spread caps, unstable quote,
+  # min/max price, VWAP extension, catalyst fast-lane, sizing, risk, stops,
+  # max positions, allocation, and options paper-only behavior.
+  min_relative_volume: 0.3
+  min_rel_volume: 0.3
+  aggressive_mode:
+    enabled: false
+    minimum_price: 2.0
+    maximum_price: 300.0
+    minimum_day_gain_pct: 0.5
+    catalyst_minimum_day_gain_pct: -2.0
+    minimum_relative_volume: 0.75
+    catalyst_minimum_relative_volume: 0.40
+    max_symbols: 50
+    max_spread_by_tier:
+      large_cap: 1.5
+      normal: 3.0
+      low_price: 5.0
+      fast_lane: 6.0
+
+  # June 12 after the RVOL loosen, INTC/NOK passed RVOL but were blocked by
+  # intraday range slightly below 1.5. This is a cautious loosen to 1.0, not
+  # a broad relaxation; entry alignment, breakout/new-high/ORB, history,
+  # allocator, sizing, risk, cooldown, exits, stops, and options are unchanged.
+  min_intraday_range_pct: 1.0
+  min_atr_expansion_ratio: 0.25
+
+  require_5m_trend_alignment: false
+
+  max_spread_pct: 2.5
+  execution_max_spread_pct: 8.0
+  strong_catalyst_override:
+    enabled: true
+    min_news_score: 3
+    min_event_score: 2.5
+    max_day_gain_pct: 250
+    max_spread_pct: 5.0
+    keep_min_price_filter: true
+    keep_bad_quote_filter: true
+    keep_unstable_quote_filter: true
+
+  catalyst_boost:
+    enabled: true
+    min_news_score: 0.60
+    score_boost: 2.0
+    allow_rel_volume_relax: true
+    min_relative_volume_with_catalyst: 1.0
+    allow_vwap_relax: true
+    max_gain_pct_catalyst: 250
+    max_gain_pct_with_catalyst: 250
+
+  # Dynamic/news-driven sleeve caps for aggressive mode. These increase room for
+  # high-quality movers without changing churn controls or stop/emergency behavior.
+  max_total_exposure_pct: 30
+  max_symbol_exposure_pct: 12
+
+  cooldown_profit_minutes: 390
+  cooldown_loss_minutes: 780
+  reentry_cooldown_minutes: 60
+  max_hold_minutes: 300
+  force_exit_before_close_minutes: 20
+  close_intraday_positions_before_close: true
+  minutes_before_close_to_flatten: 10
+  allow_overnight_dynamic_hold: false
+  max_entry_vwap_extension_pct: 8.0
+  weak_catalyst_max_entry_gain_pct_live: 15.0
+  weak_catalyst_exceptional_rvol: 3.0
+  weak_catalyst_late_entry_reduction: 0.5
+  early_watch_gain_min_pct: 8.0
+  early_watch_gain_max_pct: 12.0
+  early_watch_recheck_seconds: 30
+  early_watch_enabled_live: true
+  min_profit_before_full_exit_pct: 2.0
+  atr_exit:
+    enabled: true
+    stop_atr_mult: 1.5
+    target_atr_mult: 3.0
+    trail_after_atr_mult: 2.0
+    trail_atr_mult: 1.0
+
+dynamic_aggressive:
+  enabled_live: true
+  max_positions: 1
+  max_notional: 500
+  min_gain_pct: 8.0
+  max_gain_pct: 25.0
+  min_relative_volume: 1.5
+  require_vwap_above: true
+  require_new_high_or_breakout: true
+  max_spread_pct: 2.5
+  stop_loss_pct: 3.0
+  take_profit_pct: 4.0
+  max_hold_minutes: 20
+  cooldown_minutes: 30
+  block_if_market_regime_bearish: false
+  never_bypass_global_risk_caps: true
+
+  # Alpaca Market Data screener (gainers + most actives by volume); sizes capped server-side.
+  screener_top_gainers: 40
+  screener_most_actives: 25
+  news_fast_lane:
+    enabled: true
+    scan_interval_seconds: 60
+
+  # Always consider these names for the dynamic scan (merged with screener + leader_pools; deduped).
+  ai_dynamic_symbols:
+    - NVDA
+    - AMD
+    - AVGO
+    - MU
+    - ANET
+    - PLTR
+    - SMCI
+    - MRVL
+
+  # Merge symbol buckets with screener output (AI / semis / biotech / energy ETFs & runners).
+  leader_pools:
+    ai_semis: [NVDA, AMD, SMCI, AVGO, MU, ARM]
+    biotech_runners: []      # e.g. add liquid SMID-cap symbols when you maintain a list
+    energy_spikes: [XLE]
+    megacap_tech: [META, AMZN, GOOGL]
+  # One-off additions (earnings dates, manual runners).
+  extra_mover_symbols: []
+
+  # Tape context: add weighted %% move from sector/theme ETFs into ranking score (SMH/XLK/XBI hot = boost).
+  theme_momentum_bonus_etfs:
+    SMH: 0.35
+    XLK: 0.25
+    XBI: 0.15
+    XLE: 0.15
+
+  # Optional: require candidate day %% gain ≥ benchmark (SPY) + spread (sector strength vs broad market).
+  sector_strength:
+    enabled: false
+    benchmark: SPY
+    min_outperformance_vs_benchmark_pct: 0.0
+
+  # Momentum continuation on 5-minute closes (last N bars strictly stepping up).
+  min_5m_consecutive_up_bars: 0
+
+# Stricter scanner tape for continuation names + optional bypass of MA/pullback and 5m>20m EMA guard on entry.
+dynamic_momentum_override:
+  enabled: true
+  min_day_gain_pct: 20
+  min_relative_volume: 1.8
+  require_above_vwap: false
+  allow_without_pullback: true
+  allow_without_ema_pullback: true
+
+trend_long:
+  reentry_protection:
+    enabled: true
+    live_enabled: false
+    cooldown_minutes_after_stop: 90
+    require_new_breakout: true
+    require_new_intraday_high: false
+    require_new_signal_timestamp: true
+
+# Live entry for scanner-added names: tape + spread + VWAP + intraday confirmation (5m breakout / session high / strong green bar).
+dynamic_momentum_entry:
+  enabled: true
+  allocator_allow_no_catalyst_if_scanner_selected: true
+  min_day_gain_pct: 2.0         # dynamic_live_loosen_v1 from 3.0
+  min_relative_volume: 0.3      # dynamic_stock_rvol_loosen_v2 opportunity gate only
+  catalyst_min_relative_volume: 0.35
+  max_entry_spread_pct: 3.0     # require spread_pct < this
+  require_above_vwap: true
+  # dynamic_live_alignment_v1: allow high-quality dynamic_momentum_override names
+  # above VWAP to pass alignment without breakout/new-high/strong-green/ORB.
+  # Hard filters stay intact: RVOL floor, spread cap, VWAP, ATR/range checks,
+  # risk caps, stops, sizing, and allocator protections.
+  vwap_score_alignment:
+    enabled: true
+    min_score: 80
+    min_day_gain_pct: 15
+  # Session-aware dynamic RVOL confirmation. Keeps volume protection but allows
+  # high-quality dynamic names a small post-11am ET miss tolerance.
+  adaptive_volume_confirmation:
+    enabled: true
+    after_11am_enabled: true
+    after_11am_min_relative_volume: 0.25
+    minor_miss_tolerance: 0.15
+    strong_score_min: 80
+    strong_gain_pct_min: 8.0
+    require_momentum_confirmation: true
+  strong_green_body_frac: 0.55
+  # Opening range (first N minutes of RTH): entry allowed when price breaks above OR high (1m bars with timestamps).
+  opening_range_breakout:
+    enabled: true
+    minutes: 15
+  # Volatility DNT + MQ spike gate ATR%% cap for entry_route=momentum_breakout (scanner adds).
+  dynamic_atr_cap: 15
+  # Intraday momentum composite for scanner names; only ``momentum_top_n`` highest may enter per scan pass.
+  momentum_top_n: 3
+  momentum_score:
+    enabled: true
+    weights:
+      rel_volume: 0.3
+      gain_pct: 0.3
+      five_min_breakout: 0.2
+      vwap_distance: 0.2
+    normalize:
+      rel_volume_max: 5.0
+      gain_pct_max: 50.0
+      vwap_distance_pct_max: 15.0
+  # When true, also apply legacy dynamic_entry_guard (RSI / VWAP distance / 1m EMA stack).
+  apply_legacy_dynamic_guard: false
+  # Small starter buys for scanner-added names with strong news (bypass breakout confirmation only).
+  news_dynamic_entry:
+    min_news_score: 2
+    min_relative_volume: 1.0
+    max_spread_pct: 1.0
+    starter_notional_usd: 750
+    starter_notional_fraction_of_normal: 0.25
+    early_min_news_score: 3
+    early_min_relative_volume: 0.5
+    early_max_spread_pct: 1.5
+
+dynamic_entry:
+  aggressive_mode:
+    enabled: false
+    rollout: shadow_only
+    disable_fast_lane: false
+    disable_low_priced_symbols: false
+    disable_cooldown_overrides: false
+    disable_starter_entries: false
+    disable_scaling: true
+    max_gross_exposure_pct: 20
+    max_positions: 4
+    max_position_notional_pct: 5
+    low_price_max_position_notional_pct: 1.5
+    max_daily_realized_loss_pct: 1.0
+    minimum_price: 2.0
+    normal_threshold: 60
+    fast_lane_threshold: 50
+    strong_regime_threshold: 55
+    neutral_regime_threshold: 60
+    weak_regime_threshold: 65
+    severe_risk_off_threshold: 75
+    block_severe_risk_off: true
+    max_noncritical_failures: 3
+    max_entries_per_symbol_per_day: 3
+    weights:
+      catalyst: 25
+      momentum: 20
+      relative_volume: 15
+      intraday_gain: 10
+      trend: 10
+      structure: 10
+      symbol_vwap: 5
+      market_confirmation: 5
+    fast_lane:
+      news_score: 3
+      catalyst_score: 0.25
+      event_score: 2.0
+      rvol_gain_pairs:
+        - relative_volume: 2.0
+          gain_pct: 4.0
+        - relative_volume: 4.0
+          gain_pct: 2.0
+      gap_or_gain_pct: 8.0
+    size_by_score:
+      80: 1.00
+      70: 0.65
+      60: 0.40
+      55: 0.25
+      50: 0.15
+    price_tier_size:
+      above_20: 1.00
+      five_to_20: 0.75
+      two_to_5: 0.35
+    cooldown_minutes:
+      profitable_exit: 10
+      scratch_exit: 15
+      small_loss: 30
+      large_loss: 60
+      material_catalyst_reset: true
+  flexible_entries:
+    enabled: true
+    setup_types:
+      fresh_breakout: true
+      vwap_reclaim: true
+      ema_pullback: true
+      higher_low_continuation: false
+      consolidation_break: false
+    one_minor_rule_exception:
+      enabled: true
+      max_minor_failures: 1
+    sizing:
+      vwap_reclaim_multiplier: 0.50
+      ema_pullback_multiplier: 0.50
+      higher_low_multiplier: 0.50
+      consolidation_break_multiplier: 0.60
+      minor_exception_multiplier: 0.35
+    data_quality:
+      require_vwap: true
+      require_atr: true
+      require_short_ema: true
+      require_5m_trend: true
+  adaptive_sensitivity:
+    enabled: true
+    default_mode: normal
+    lookback_trading_days: 10
+    minimum_observations: 5
+    target_entries_per_day:
+      minimum: 2
+      preferred: 4
+      maximum: 6
+    quality_score:
+      normal_min_quality_score: 80
+      relaxed_reduction: 5
+      absolute_floor: 70
+    rvol:
+      normal_min: 1.5
+      relaxed_large_cap_min: 1.25
+      relaxed_other_min: 1.50
+    no_chase:
+      normal_max_vwap_distance_atr: 1.0
+      relaxed_max_vwap_distance_atr: 1.25
+      absolute_max_vwap_distance_atr: 1.50
+    one_minor_rule_exception:
+      enabled: true
+      max_failed_minor_rules: 1
+    sizing:
+      normal_multiplier: 1.0
+      relaxed_multiplier: 0.50
+      exception_multiplier: 0.35
+    safety:
+      max_rolling_drawdown_pct: 2.0
+      max_relaxed_loss_rate: 0.60
+      disable_in_risk_off_regime: true
+  # Optional cached news scoring for live exit decisions; no live API required unless enabled elsewhere.
+news_ai:
+  enabled: false
+  strong_news_score: 8
+  allow_overnight_if_score_gte: 8
+
+ai_catalyst:
+  enabled: true
+  lookback_hours: 24
+  max_articles: 10
+  fresh_hours: 12
+  stale_hours: 48
+  cache_ttl_seconds: 900
+  block_below_score: 45
+  boost_at_score: 70
+  boost_threshold_factor: 0.90
+  timeout_sec: 5
+
+ai_news_ranking:
+  enabled: true
+  score_weight: 2.0
+
+theme_intelligence:
+  enabled: true
+  bonus_weight: 0.25
+  max_bonus: 3.0
+  themes:
+    ai:
+      etfs: [AIQ, BOTZ, XLK]
+      symbols: [NVDA, PLTR, MSFT, GOOGL, META, AMZN, ANET, SMCI]
+    semiconductors:
+      etfs: [SMH, SOXX]
+      symbols: [NVDA, AMD, AVGO, MU, ARM, MRVL, QCOM, TSM, INTC, SMCI]
+    cybersecurity:
+      etfs: [CIBR, HACK]
+      symbols: [CRWD, PANW, ZS, FTNT, OKTA, S, NET]
+    energy:
+      etfs: [XLE, OIH]
+      symbols: [XOM, CVX, COP, SLB, HAL, OXY, MPC, VLO]
+    biotech:
+      etfs: [XBI, IBB]
+      symbols: [MRNA, BIIB, GILD, REGN, VRTX, BMRN, SRPT]
+
+dynamic_entry_guard:
+  max_vwap_distance_pct: 15.0
+  require_ema_5_above_20: false
+
+market:
+  open_protection:
+    enabled: true
+    dynamic_scan_delay_minutes: 5
+
+# Tiered / trailing exits for dynamic-universe positions (optional).
+dynamic_exits:
+  enabled: true
+  take_profit_1_pct: 3.0
+  take_profit_1_sell_frac: 0.25
+  take_profit_2_pct: 7.0
+  take_profit_2_sell_frac: 0.75
+  trailing_stop_pct: 2.0
+  vwap_break_exit: false
+  # Strong-news dynamic positions keep a 3-hour eligibility window in the live scanner.
+  strong_news_hold_minutes: 30
+  strong_news_trailing_trigger_pct: 8.0
+  strong_news_trailing_stop_pct: 4.0
+
+# NewsAPI → FinBERT (optional). Default off; live loop forces OFF when using --live (see run_alpaca_loop).
+news_sentiment:
+  enabled: true
+  newsapi_key_env: NEWSAPI_KEY
+  headline_lookback_hours: 24
+  max_headlines: 15
+  cache_ttl_seconds: 900
+  finbert_model: ProsusAI/finbert
+  positive_score_threshold: 0.12   # FinBERT score ~[-1,1]: buy if >= this AND volume spike
+  negative_score_threshold: -0.12  # sell if <= this AND weak trend (close < MA)
+  volume_spike_min: 1.5            # last-day volume / avg prior N days
+  volume_lookback_days: 20
+  weak_trend_ma_period: 20
+  alpaca_realtime:
+    # Optional near-real-time Alpaca news ingestion for dynamic catalyst discovery.
+    # Disabled by default; NewsAPI/SEC/premarket artifacts remain the primary path.
+    enabled: false
+    lookback_minutes: 30
+    max_age_seconds: 900
+    min_score: 3
+    limit: 50
+    persist: true
+    persist_dir: data/realtime_alpaca_news
+    symbols: []
+
+# How news+volume affects trend-long entries (MA prefilter bypass and synthetic entry).
+# off = no entry use; light = pass MA scan only, still require normal strategy entry signal;
+# full = allow synthetic news EntrySignal when trend gates fail (legacy behavior).
+news:
+  override_mode: full
+
+premarket_intelligence:
+  enabled: true
+  keep_alive_overnight: true
+  allow_trading: false
+  news_scan_time: "05:15"
+  collection_start_time: "05:15"
+  collection_end_time: "09:25"
+  refresh_interval_minutes: 12
+  artifact_ttl_minutes: 390
+  min_events_to_overwrite: 30
+  min_rankings_to_overwrite: 10
+  preserve_on_provider_rate_limit: true
+  preserve_existing_if_richer: true
+  job_timeout_seconds: 120
+  news_timeout_seconds: 10
+  alpaca_news_timeout_seconds: 10
+  sec_timeout_seconds: 10
+  sec_filings_enabled: true
+  newsapi:
+    enabled: true
+  newsapi_enabled: false
+  alpaca_news_enabled: true
+  social:
+    enabled: false
+    reddit:
+      enabled: true
+    twitter:
+      enabled: false
+    subreddits:
+      - stocks
+      - wallstreetbets
+      - investing
+      - SecurityAnalysis
+    trusted_twitter_accounts: []
+  benzinga_enabled: false
+  finnhub_enabled: false
+  marketaux_enabled: false
+  fmp_enabled: false
+  twitter_trusted_enabled: false
+  overnight_earnings_enabled: true
+  overnight_earnings_lookback_hours: 14
+  rank_top_n: 10
+  newsapi_symbol_batch_size: 2
+  newsapi_max_query_length: 200
+  newsapi_fallback_top_n: 5
+  newsapi_request_cap_per_run: 25
+  newsapi_daily_call_cap: 10
+  newsapi_cache_ttl_seconds: 3600
+  benzinga_feed_url: ""
+  benzinga_events: []
+  finnhub_api_key_env: FINNHUB_API_KEY
+  finnhub_feed_url: ""
+  finnhub_events: []
+  marketaux_api_key_env: MARKETAUX_API_KEY
+  marketaux_feed_url: ""
+  marketaux_events: []
+  fmp_api_key_env: FMP_API_KEY
+  fmp_feed_url: ""
+  fmp_events: []
+  twitter_trusted_feed_url: ""
+  twitter_trusted_accounts: []
+  twitter_trusted_events: []
+  overnight_earnings_batch_size: 3
+  include_routine_sec_filings: false
+  ignored_sec_forms:
+    - SD
+    - 13F-HR
+    - DEF 14A
+    - PX14A6G
+  finbert_timeout_seconds: 60
+
+market_sessions:
+  pre_market:
+    start: "04:00"   # ET
+    end: "09:30"
+    trade_allowed: false   # thin liquidity
+  regular:
+    start: "09:30"
+    end: "16:00"
+    trade_allowed: true
+  after_hours:
+    start: "16:00"
+    end: "20:00"
+    trade_allowed: false   # wider spreads
+
+market_quality:
+  # Mega-cap / ``extra_symbols``: if spread exceeds tier cap, allow entry and shrink size (see ``spread_relief_scale_factor``).
+  liquid_spread_relief:
+    enabled: true
+    include_mega_cap_tiers: true
+    extra_symbols: []
+    min_position_scale: 0.15
+    # Optional: reject even with relief when NBBO is extreme (null = no absolute ceiling).
+    hard_max_spread_pct: null
+  # Three-tier spread caps (%%). Precedence: symbol_max_spread_pct override → high_vol_symbols → mega_cap_symbols → normal.
+  # large_caps → liquid mega names (``mega_cap_symbols``); volatile → ``high_vol_symbols``; else ``normal``.
+  spread_caps:
+    large_caps: 1.0
+    normal: 3.5
+    volatile: 3.5
+    # mega_cap_symbols: []  # omit = default mega-cap / major ETF set (see src/universe.py)
+  # Legacy fallback when spread_caps is absent or incomplete.
+  max_spread_pct: 3.5
+  # Optional per-symbol max bid/ask spread %% (overrides tiers).
+  symbol_max_spread_pct: {}
+  high_vol_max_spread_pct: 2.5   # legacy high-vol bucket when spread_caps omitted
+  stale_quote_max_age_seconds: 60   # quotes older than this are filtered (use default spread for gate)
+  min_volume_atr_ratio: 1.0
+  # Last daily bar volume (shares): if set and last bar vol < this, skip spread cap (market quality, execution, volatility DNT). null = never bypass
+  ignore_spread_when_last_bar_volume_below: null
+  block_on_news_spike: true
+  news_volatility_spike_atr_pct: 8.0   # core universe: block when daily ATR% >= this
+  news_volatility_spike_atr_pct_dynamic: 14.0   # scanner-added / dynamic symbols (wider cap)
+  # High-vol bucket (same spread threshold; list for DNT/other logic)
+  high_vol_symbols:
+    - COIN
+    - RIVN
+    - SOFI
+    - UPST
+    - MARA
+    - SMCI
+    - SNOW
+    - FXI
+    - KWEB
+    - BABA
+    - JD
+    - PDD
+# (high_vol_max_spread_pct set above with core)
+
+# US market holidays / half-days (sample; extend per year)
+holidays: []   # populated at runtime or from calendar
+
+# ---------------------------------------------------------------------------
+# 1b) Trade filters: macro blackout, earnings blackout, volatility DNT
+# ---------------------------------------------------------------------------
+trade_filters:
+  # Macro-event blackout: no trading on these dates or time windows (ET)
+  macro_blackout:
+    enabled: true
+    # Full-day blackout (no trading all day)
+    blackout_dates: []   # e.g. ["2025-03-12", "2025-04-10"]  FOMC, CPI, etc.
+    # Or specific time windows on a date (start/end in ET, "HH:MM")
+    blackout_windows: []  # e.g. [{ date: "2025-03-12", start: "13:00", end: "15:30" }]
+
+  # Earnings blackout per symbol: no trading N days before/after earnings
+  earnings_blackout:
+    enabled: true
+    days_before: 1
+    days_after: 1
+    # Earnings dates per symbol (YYYY-MM-DD). Update manually or from calendar.
+    earnings_dates:
+      AAPL: []
+      MSFT: []
+      NVDA: []
+      AMZN: []
+      GOOGL: []
+      META: []
+      TSLA: []
+      AVGO: []
+      AMD: []
+      NFLX: []
+      JPM: []
+      BRK.B: []
+      BAC: []
+      SMCI: []
+      COIN: []
+      PLTR: []
+      SNOW: []
+      XLF: []
+      XLE: []
+      XLV: []
+      XLI: []
+      XLY: []
+      TLT: []
+      GLD: []
+      LMT: []
+      NOC: []
+      CRM: []
+      ORCL: []
+      UBER: []
+      SHOP: []
+      PANW: []
+      CRWD: []
+      VIXY: []
+      RIVN: []
+      SOFI: []
+      UPST: []
+      MARA: []
+      HYG: []
+      XLK: []
+      GS: []
+      MS: []
+      FXI: []
+      KWEB: []
+      BABA: []
+      JD: []
+      PDD: []
+      # Expanded universe (Lean-style)
+      XLP: []
+      XLB: []
+      XLRE: []
+      SLV: []
+      IWM: []
+      ADBE: []
+      CSCO: []
+      INTC: []
+      QCOM: []
+      IBM: []
+      NOW: []
+      INTU: []
+      AMAT: []
+      LRCX: []
+      NET: []
+      ABNB: []
+      C: []
+      WFC: []
+      SCHW: []
+      AXP: []
+      BLK: []
+      UNH: []
+      JNJ: []
+      PFE: []
+      ABBV: []
+      MRK: []
+      LLY: []
+      TMO: []
+      ABT: []
+      DHR: []
+      BMY: []
+      HD: []
+      MCD: []
+      NKE: []
+      SBUX: []
+      TGT: []
+      LOW: []
+      COST: []
+      PG: []
+      KO: []
+      PEP: []
+      WMT: []
+      RTX: []
+      BA: []
+      HON: []
+      UPS: []
+      CAT: []
+      DE: []
+      DDOG: []
+      SQ: []
+      ARM: []
+      MU: []
+      GE: []
+      ETN: []
+      PH: []
+      ISRG: []
+      XLU: []
+      SMH: []
+
+  # Volatility/spread-based "do not trade" (uses real ATR%, tiered spread)
+  volatility_do_not_trade:
+    enabled: true
+    # When ``regime_condition`` from MarketRegimeScorer is set (bullish / neutral / defensive), caps ATR%% for DNT.
+    # Keys must match scorer labels: defensive (= bearish bucket), not "bearish".
+    max_atr_pct_regime:
+      defensive: 3.0
+      neutral: 9.0
+      bullish: 6.0
+    max_atr_pct: 9.0       # fallback when regime_condition absent
+    max_atr_pct_bullish_regime: 6.0   # when score ≥ bullish_regime_min_score and no regime map hit
+    bullish_regime_min_score: 4
+    max_spread_pct: 3.5     # legacy default when market_quality.spread_caps absent
+    high_vol_symbols:      # merged with market_quality.high_vol_symbols for tier resolution
+      - COIN
+      - RIVN
+      - SOFI
+      - UPST
+      - MARA
+      - SMCI
+      - SNOW
+      - FXI
+      - KWEB
+      - BABA
+      - JD
+      - PDD
+    high_vol_max_spread_pct: 2.5
+
+# ---------------------------------------------------------------------------
+# Alpha — ranked signal selection (composite scoring weights + per-cycle new-name cap)
+# Merges with ``portfolio.signal_ranking``; see src/alpha_config.py.
+# ---------------------------------------------------------------------------
+alpha:
+  rank_candidates: true
+  max_new_positions_per_cycle: 3
+  selection_method: top_n
+  # Optional: cap ranked trend-long dispatch per cycle after full sort (``only_best: true`` = top 1).
+  # omit = use portfolio ``max_take`` / effective cap only (see src.alpha_config.alpha_cap_ranked_take).
+  # select_top_k: 1
+  scoring:
+    weight_trend: 0.3
+    weight_momentum: 0.3
+    weight_pullback: 0.2
+    weight_volatility: 0.2
+
+# Min range / ATR for specific defensive, slow-tape names (separate from trade_filters)
+filters:
+  # Latest bar in ``ohlcv`` (live: usually daily from Alpaca): (high−low)/close*100; not 1m intraday.
+  min_intraday_range_pct: 1.0
+  min_atr_pct: 1.2
+  symbols: [KO, XLP]
+  # Regime: skip chop / neutral (AND across all enabled; turn off the EMA pair to use only ADX).
+  require_adx: false
+  adx_min: 20.0
+  adx_period: 14
+  require_price_above_20ema: true
+  require_20ema_slope_positive: true
+  # Disabled by default. Dynamic momentum callers may pass strong context to
+  # tolerate a near-flat 20 EMA slope without disabling the trend filter.
+  ema_slope_tolerance:
+    enabled: false
+    max_negative_slope_pct: 0.02
+    strong_momentum_score_min: 80
+    allow_breakout_continuation: true
+
+# Post stop-loss: same-symbol re-entry wait + optional MA/regime bypass (merged into strategy.exits by config_loader).
+cooldown:
+  after_stop_loss_minutes: 30
+  allow_reentry_if_strong_trend: false
+
+# After stop / profit exit: optional “new high above stop” gate + pullback vs strict exit price (config_loader).
+reentry:
+  require_new_high: false
+  allow_pullback_reentry: true
+
+# Merged into ``strategy.exits`` (see config_loader). Kill-switch aliases: ``partial_sell_pct`` → ``sell_fraction``;
+# ``drawdown_threshold_pct`` → ``max_atr_pct`` when the latter is omitted.
+exits:
+  kill_switch:
+    mode: partial
+    drawdown_threshold_pct: 3.0
+    partial_sell_pct: 0.20
+
+# ---------------------------------------------------------------------------
+# 2) Strategy (trend-following; see README for behavior — must match code in src/strategy.py)
+# ---------------------------------------------------------------------------
+strategy:
+  type: trend_following   # trend_following | mean_reversion | breakout
+  reinforcement:
+    enabled: true
+    add_if_profit_pct: 0.5
+    max_adds: 2
+  # player_focus retail: MAs from strategy.retail + shorter time exit. institutional: adds volume filter on entry.
+  player_focus: retail   # retail | neutral | institutional
+  # Institutional: only trade when volume >= N x 20d avg (proxy for institutional activity)
+  institutional:
+    min_volume_ratio_vs_avg: 1.2   # e.g. 1.2 = 20% above average volume
+  # Retail: overrides MA periods; time_bars_exit here overrides strategy.exits.time_bars_exit in code (see strategy.py).
+  retail:
+    ma_fast: 10
+    ma_slow: 50
+    time_bars_exit: 20   # live loop: compared to calendar days since entry (positions_tracked), not bar count
+  # Candlestick filter: only enter when one of these patterns appears (uses same OHLC)
+  candlestick_filter:
+    enabled: false
+    patterns: [ "bullish_engulfing", "hammer" ]   # or "doji"; leave empty to allow any
+  # Live loop trend prefilter (run_alpaca_loop) before entry gates — relax to trade more names above short MA only.
+  trend_filter:
+    require_above_both_ma: false
+    allow_above_fast_ma: true
+    # Slack vs fast/slow MA (percent points): 0.1 → price may sit up to 0.1%% below the MA and still pass.
+    ema_tolerance_pct: 0.1
+  # When the live-loop trend MA prefilter fails, optional non-trend entries (run_alpaca_loop).
+  # Each style uses ``entry_override`` so full gates still run; set enabled true to activate.
+  alternate_entries:
+    enabled: false
+    min_regime_score: 2
+    signal_strength: 0.82
+    order: [breakout, mean_reversion, volatility]
+    allow_for_add_on: false
+    breakout:
+      enabled: true
+      lookback: 20
+      breakout_epsilon_pct: 0.05
+    mean_reversion:
+      enabled: true
+      rsi_period: 14
+      rsi_max: 38
+      ma_long: 200
+    volatility:
+      enabled: true
+      atr_pct_min: 1.25
+      atr_pct_max: 8.0
+      daily_range_close_frac: 0.55
+  trend_following:
+    # Retail / more entries: 10/50 MAs, momentum; ATR caps align with volatility_do_not_trade regime tiers.
+    entry_mode: momentum
+    ma_fast: 10
+    ma_slow: 50
+    pullback_touch_ma_fast: true
+    pullback_tolerance_pct: 2.0   # used only when entry_mode: pullback
+    volatility_filter_atr_period: 14
+    # Entry filter: block when ATR%% on the bar exceeds this (see TrendFollowingStrategy.generate_entry).
+    max_atr_pct_for_entry: 6.0
+    max_atr_pct_for_entry_bullish: 6.0
+    bullish_regime_min_score_for_atr: 4
+    # Normalized composite score (0–1) on entries → :class:`EntrySignal` ``strength``; sizer uses it
+    # with ``position_sizing.volatility_sizing.signal_strength_mapping: proportional`` (see position_sizing.py).
+    entry_signal_strength:
+      enabled: true
+  exits:
+    # Trailing: ``use_trailing_stop`` + ``trailing_stop_pct`` (post–partial-profit); ``smart_trailing`` (profit
+    # arm + dynamic trail %% / ATR + scale-outs). Evaluated each exit pass at ``timing.exit_interval_min``.
+    stop_loss_pct: 1.5
+    # Wall-clock minimum before partial, trail, time exit, kill-switch, or news-based exit (live).
+    # Churn (CRITICAL): 60–120 m band — tune; stops may still defer briefly after the open.
+    # Stop-loss allowed unless avoid_stop_loss_first_minutes_after_open defers it after the open.
+    min_hold_minutes: 60
+    # Live only: defer risk-cap clip, overweight trim, and partial unrealized-P/L trim until min_hold_minutes.
+    no_trim_before_min_hold: true
+    avoid_stop_loss_first_minutes_after_open: 5
+    # Full profit-booking exits: same-symbol re-entry cooldown (minutes); typical band 10–15.
+    cooldown_after_profit_minutes: 15
+    # Partial take-profit / partial P/L trim: shorter same-symbol re-entry only (minutes).
+    cooldown_after_profit_partial_minutes: 2
+    strong_trend_reconfirm_min_regime_score: 4
+    # When true, skip the close>exit-price re-entry gate if MA stack + min regime score pass (see strong_momentum_reentry_ok).
+    strong_momentum_bypass_profit_reentry_price: true
+    # Superseded for price level by entries.allow_reentry_on_pullback + reentry_price_buffer_pct when that is true.
+    require_price_above_exit_after_profit: false
+    take_profit_pct: 3.0
+    use_trailing_stop: true
+    trailing_stop_pct: 1.25
+    # Partial take-profit arm (%% unrealized). Prefer trigger_profit_pct; else partial_take_profit_pct (default 2).
+    # When ``trim_winners_enabled``, ``trim_threshold_pct`` / ``trim_fraction`` replace the partial arm + exit ratio
+    # (frees capital earlier on open winners vs a single high trigger).
+    trigger_profit_pct: 2.5   # legacy partial arm; overridden when trim_winners_enabled
+    partial_exit_ratio: 0.25
+    trim_winners_enabled: true
+    trim_threshold_pct: 1.5
+    trim_fraction: 0.3
+    # Live exit pass: trim toward target %% of equity per name; each cycle sells ``trim_aggressiveness`` × dollar excess.
+    trim_on_overweight: true
+    target_position_pct: 0.08
+    trim_aggressiveness: 0.5
+    time_bars_exit: 20
+    # Optional: replaces legacy partial + trailing block in :meth:`TrendFollowingStrategy.check_exit` when enabled.
+    smart_trailing:
+      enabled: true
+      activate_profit_pct: 3.0
+      trail_pct: 2.0
+      # When enabled, trail distance uses max(floor_pct, atr_pct * atr_mult); atr_pct = (ATR/close)*100.
+      # If ATR is unavailable, falls back to trail_pct above.
+      dynamic_trail_pct:
+        enabled: true
+        floor_pct: 1.5
+        atr_mult: 1.2
+      scale_out:
+        - profit_pct: 5.0
+          sell_pct: 0.25
+        - profit_pct: 10.0
+          sell_pct: 0.25
+      # Churn: align with global min_hold (60–120 m); defers scale-out and smart trail until then.
+      min_hold_minutes: 60
+    kill_switch:
+      mode: partial
+      sell_fraction: 0.20
+      max_spread_pct: 0.7
+      max_atr_pct: 3.0
+    # Long equity: when unrealized P/L > min_pnl_pct (%%) and daily structure still a strong long trend,
+    # block discretionary sells (stops, kill-switch, trail unchanged). See src/live/exits.py.
+    do_not_sell_winners_early:
+      enabled: true
+      min_pnl_pct: 2.0
+
+    # Momentum fade: full exit when daily close falls below trend_following.ma_fast (optional RSI confirmation).
+    momentum_fade:
+      enabled: true
+      close_below_fast_ma: true
+      min_profit_pct: 0.0
+      rsi_confirm:
+        enabled: false
+        period: 14
+        below: 48
+
+    # One partial trim per position after wall-clock minutes held (persists ``time_based_trim_done`` on tracker).
+    time_based_trim:
+      enabled: true
+      after_minutes: 240
+      trim_fraction: 0.2
+      min_profit_pct: 0.0
+
+breakout_module:
+  enabled: true
+  max_trades_per_day: 2
+  max_total_exposure_pct: 6
+  min_volume: 2000000
+  min_price: 10
+  take_profit_pct: 1.5
+  strong_take_profit_pct: 2.5
+  stop_loss_pct: 0.7
+  trailing_stop_pct: 0.5
+  max_hold_minutes: 60
+
+# ---------------------------------------------------------------------------
+# 2b) Portfolio cap & rotation (trend longs in live loop)
+# ---------------------------------------------------------------------------
+portfolio:
+  target_core_stock_pct: 65
+  target_dynamic_pct: 45
+  target_cash_pct: 10
+  dynamic_quality:
+    enabled: true
+    allow_event_news_fallback: true
+    # dynamic_pure_momentum_allocator_v1: scanner-approved dynamic momentum
+    # names can pass allocator quality without news/catalyst only when score,
+    # RVOL, gain, and existing hard quote/spread safety are strong.
+    allow_pure_momentum: true
+    pure_momentum_min_score: 35
+    pure_momentum_min_rvol: 0.8
+    pure_momentum_min_gain_pct: 3.0
+    pure_momentum_max_spread_pct: 2.5
+    min_catalyst_score: 0.3
+    min_event_score: 3.0
+    min_news_score: 3.0
+  # Lifetime cash contributions to the account. Daily report uses this baseline to show
+  # cumulative profit and total return relative to the money you have put in so far.
+  total_contributed_usd: 0
+  # Hard gross kill-switches (no strong-signal relief): fraction of equity or %% points (90 → 0.90).
+  # Allow gross toward 110%% in strong bullish regimes; keep hard stops above that band.
+  hard_stop_new_entries_above_gross: 112
+  hard_block_all_entries_above: 95
+  # safe | balanced | aggressive | custom — preset overrides min_cash_reserve_pct / gross caps at load.
+  # Use ``custom`` when setting explicit ``min_cash_reserve_pct`` / gross caps below (otherwise balanced forces 5%% reserve).
+  risk_book_mode: custom
+  # Per SYMBOL_SECTOR long-book cap vs equity (momentum / trend, not static ETF grid). Merges with risk.sector_cap_pct (stricter wins); see effective_max_sector_sleeve_pct.
+  max_sector_pct: 0.42
+  # Aggressive dynamic mode allows near-fully deployed stock gross exposure while
+  # retaining hard stop-new-buys, reduce-only, emergency, and exit controls below.
+  # Gross long MV / equity cap for position-sizing headroom (0–1 fraction, or percent >1 e.g. 95).
+  # When set, overrides ``position_sizing.max_gross_exposure_pct`` (see src/position_sizing.py).
+  # Precedence: ``max_gross_exposure`` → ``max_gross_exposure_pct`` → ``target_gross_exposure_pct``.
+  # Align with exposure_gates.max_total_exposure_frac when tuning stop-new-buys gross band.
+  max_gross_exposure: 1.00
+  target_gross_exposure_pct: 1.00
+  # Raised to 110%% of equity **only** when market regime leg is bullish and score ≥ 4 (see src/position_sizing.py).
+  bullish_score_4_plus_max_gross_exposure_pct: 110
+  # Partition deployable BP (after min-cash reserve): stock allocator / equity entries vs options premium budget.
+  capital_split:
+    enabled: true
+    stocks: 0.70
+    options: 0.30
+  # If broker cash / equity × 100 is ≥ this, use scoring.when_high_cash and portfolio_brain.when_high_cash (0 = off).
+  high_cash_deploy_pct: 30
+  # Gross long MV / equity and technology sector sleeve (see src/exposure_gates.py, src/exposure.py).
+  exposure_gates:
+    enabled: true
+    # Block allocator / entry buys when long gross MV / equity exceeds this fraction (operator stop_new_buys_above_gross_pct).
+    # Aggressive dynamic mode lifts this to 95% so dynamic entries are not blocked too early.
+    max_total_exposure_frac: 0.95
+    max_tech_sector_exposure_frac: 0.4      # when technology sector / equity > this, scale new tech entries
+    tech_over_cap_size_multiplier: 0.5      # multiply regime size multiplier for new entries in technology only
+    # When true, live loop trims a slice of the weakest long (rebalance_free_capital band) if gross / equity
+    # exceeds the effective cap (adaptive + base; no per-entry strong-signal gross relief). See run_alpaca_loop.
+    force_trim_weakest_when_over_max: true
+    # When gross long MV / equity exceeds this (fraction, default 1.0 = 100%): **mode: reduce_only** in the
+    # live heartbeat; block new long entries in TradingEngine; skip bear/Inverse buys; skip symbol/allocator buys.
+    overexposed_reduce_only: true
+    overexposed_reduce_only_gross_frac: 1.08
+    # Trim order size to fit headroom under gross / portfolio budget caps instead of hard-rejecting when near cap.
+    soft_cap:
+      enabled: true
+  # Composite strength ≥ min_strength: slightly exceed gross exposure cap (+extra_gross_exposure_frac)
+  # and bypass early max-positions skips in run_alpaca_loop (TradingEngine applies the gross relief too).
+  # When relief_symbols is set, relief applies only to those tickers; omit it for all symbols.
+  strong_signal_cap_relief:
+    enabled: true
+    min_strength: 0.82
+    extra_gross_exposure_frac: 0.02
+    # Gross-cap + early max-position relief only for these tickers (strong signal ≥ min_strength).
+    relief_symbols:
+      - SPY
+      - NVDA
+  # Live loop (run_alpaca_loop): max new trades per user pass (options + stock); add-ons with allow_add skip cap.
+  # See MAX_NEW_TRADES_PER_LOOP in src/portfolio_replacement.py (default 3).
+  # Long stock market value (ex-options) + new buy ≤ this % of equity (see src/portfolio_allocation.py).
+  # Deployable buying power for new stock entries ≤ equity × (1 − reserve) (also capped by broker BP).
+  # Decimal in (0,1) = fraction (0.10 → 10%); integer ≥1 = percent points (10 → 10%). See min_cash_reserve_frac.
+  # Ignored when ``allocator.mode: dynamic_risk_budget`` (use ``allocator.cash_buffer_pct`` instead).
+  min_cash_reserve_pct: 12
+  # When true, each entry scan: if broker cash %% of equity < min_cash_target (see tolerance), one weakest-long trim (rebalance_free_capital band). When false, no proactive per-scan cash lift.
+  rebalance_each_cycle: false
+  # Target floor for broker cash %% of equity (integer = percent points; fraction 0–1 = decimal). Drives ``rebalance_each_cycle`` trim.
+  min_cash_target_pct: 8
+  # Cash %% of equity trim threshold = ``min_cash_target_pct`` minus this (percent points; ``0`` = strict).
+  rebalance_tolerance_pct: 3
+  # Ignored when ``allocator.mode: dynamic_risk_budget`` (stock sleeve = 1 − options sleeve; see :mod:`src.dynamic_risk_budget`).
+  max_stock_capital_pct: 60
+  # Effective options premium cap = min(this %, options.total_exposure_limit / legacy max_total_options_exposure_pct) × equity.
+  max_options_capital_pct: 40
+  # Distinct long equity names cap — top-N stock book (live loop; rotation at cap when enabled).
+  # Limit open names to reduce overlap and execution churn.
+  # Omitting max_positions defaults to 10, or ``portfolio.allocator.max_positions`` when set (see max_portfolio_positions_from_config).
+  max_positions: 10
+  # Rank by ``portfolio.replacement.weakest_pick`` (same as rotation): keep top *N* names, full-exit
+  # the rest (worst first; *max_sells_per_pass* per heartbeat). *top_n* 0 = *max_positions* above.
+  rank_based_holding:
+    enabled: true
+    top_n: 8
+    max_sells_per_pass: 1
+  # Min score gap for rotation when replacement.replacement_threshold is NOT in (0, 1):
+  # new signal score must exceed weakest position score by this much (see portfolio_score_replacement).
+  swap_threshold: 10
+  # When true and at max_positions, still scan symbols you already hold for add-on stock buys (uses merge on tracker).
+  # Informal synonym some operators use: allow_add_to_winners — same flag (pyramid adds on existing longs / tracker).
+  allow_add: true
+  # When false: for symbols already held or on tracker, treat allow_add as true only if strong daily trend
+  # (strong_trend_reconfirm_ok when strategy.exits.strong_trend_reconfirm_bypass_cooldown; else MA/regime structure
+  # via strong_momentum_structure_ok). With headroom: allow add below cap. Without headroom: enable ``pyramid_into_winners``
+  # (strong trend + min unrealized profit %%) to bypass the %% cap gate and widen sizing.
+  allow_add_on_strong_momentum: false
+  # When ``allow_add_on_strong_momentum`` is true: if already at/near the per-name %% cap, still allow an add
+  # when daily structure is strong **and** unrealized P&L %% vs cost basis ≥ threshold (widens sizing via ``cap_relax_multiplier``).
+  pyramid_into_winners:
+    enabled: false
+    min_unrealized_profit_pct: 5.0
+    cap_relax_multiplier: 1.15
+  # When sizing rejects with ``portfolio caps leave no room``, trim the **weakest** eligible long(s) first
+  # (replacement strength; same as rotation) by ``trim_frac`` (10–20% band; default 15%) before rotating out
+  # a full weakest line — frees gross for the new entry. Use with ``allocation.rank_by_signal_strength: true``
+  # so the scan prioritizes the strongest new signals (Top-K).
+  cap_pressure_trim:
+    enabled: true
+    trim_frac: 0.15
+    max_symbols_per_cycle: 6
+  # Rank-by-strength queue: if the **top** candidate fails dispatch (gates / BP / caps), optionally
+  # trim one weakest held line (``trim_frac``, same band as ``cap_pressure_trim``) then retry that
+  # symbol once — favors funding the strongest signal vs falling through to lower-ranked names.
+  ranked_capital_reallocation:
+    enabled: false
+    trim_frac: 0.15
+  # Extra pyramid-add gates (live loop only): when ``enabled``, an add-on requires
+  # ``entry_signal.strength`` > ``min_signal_strength`` AND long market value < ``max_scaled_position_usd``
+  # (set USD cap to 0 to skip the size check). Ignored for net-new positions.
+  add_on:
+    enabled: false
+    min_signal_strength: 0.60
+    # Existing-position strong-signal adds are small by design: cap each add to 1–2% of equity.
+    incremental_add_pct: 0.02
+    max_scaled_position_usd: 0
+  # **Default: ``enabled: false``** — one stock entry path: ``run_entry_gates`` → BP / ranking →
+  # ``dispatch_trend_long_after_buying_power``. Set ``enabled: true`` for the allocator path
+  # (``execute_capital_allocator_pass``). With ``options.enabled`` and new option entries on, the live loop
+  # routes trend-longs with ``strength_eff > execution.strong_signal_strength_min`` to
+  # ``dispatch_trend_long_after_buying_power`` (options or stock) and only ``strength_eff`` at/below
+  # that to the post-scan **equity** allocator batch. ``min_trade_size`` is the base tranche; ``min_realloc_leg`` drops
+  # sub-$ rotation/new-leg notionals in the allocator and at submit (see :mod:`src.capital_allocator`).
+  capital_allocator:
+    enabled: true
+    allow_stock_fallback_if_options_fail: true
+    allow_add_ons: true
+    add_on_signal_threshold: 0.55
+    # Let the allocator return [] when candidates are not worth buying; forced buys are opt-in only.
+    allow_no_trade_cycles: false
+    selected_must_execute: true
+    force_deploy_when_candidates_exist: true
+    max_positions: 10
+    # Per-name % of equity: optional **soft** / **hard** default band for symbols **not** listed in tier
+    # buckets. Tier keys ``leaders`` → ``core`` → ``defensive`` (or under ``tiers:``) set per-ticker **hard**
+    # caps (first bucket wins if duplicated). Optional ``bullish_soft`` / ``bullish_hard`` when regime is bullish.
+    # Legacy: ``base`` / ``bullish_regime`` (single line). Merged (stricter wins) with ``portfolio.max_single_position_pct``
+    # / risk per-name cap. ``regime_<n>`` (exact score): relax/tighten for that score (replaces ``risk.max_symbol_allocation_pct`` in the merge).
+    # Per-name %% of equity (merged stricter with risk.max_symbol_allocation_pct). Operator alias: max_symbol_allocation_pct.
+    symbol_caps:
+      soft: 0.15
+      hard: 0.18
+      regime_4: 0.20
+      leaders:
+        NVDA: "22%"
+        MU: "22%"
+        SMH: "18%"
+        PLTR: "18%"
+        AMD: "18%"
+        SPY: "22%"
+        QQQ: "22%"
+      core:
+        IWM: "22%"
+        DIA: "6%"
+      defensive:
+        WMT: "4%"
+        KO: "3%"
+    min_trade_size: 750
+    min_trade_notional: 750
+    min_signal_strength: 0.30
+    min_realloc_leg: 1200
+    minimum_cash_to_deploy_pct: 0.03
+    # Cap each BUY leg: min(equity × %%, $ cap). Operator: max_single_order_notional_pct / max_single_order_notional.
+    max_single_order_notional_pct: 0.12
+    max_single_order_notional: 5000
+    # Allocator-only: drop BUY legs when gross long MV / equity **fraction** is strictly above this.
+    refuse_to_allocate_if_gross_above: 0.90
+    # Before broker submit: net buy/sell notionals per symbol; omit legs with |net| < min (default = min_realloc_leg).
+    consolidate_net_before_submit: true
+    # min_net_notional: 500   # optional override; omit to use min_realloc_leg
+    rotate_trim_fraction: 0.30
+    # Full book / swap path: rotate only when incoming book strength clearly beats weakest × ratio (default 1.2 ⇒ need ~20%% edge vs held line).
+    replace_weakest_with_stronger: true
+    replacement_strength_ratio: 1.2
+    # CRITICAL "sell only if needed": rebalance trims (and rotate) require incoming score strictly above the sourced line (rotate_capital); avoids selling a stronger hold to fund a weaker buy.
+    sell_only_if_needed: true
+    # One allocator execute per heartbeat; ``allocate()`` uses a BP snapshot taken immediately before
+    # the pass (not cash mutated during the symbol scan). When true (default), skips the legacy
+    # ``post_sell_reallocation`` second execute in the same tick (equal-split redeploy defers to next cycle).
+    single_pass_per_cycle: true
+    # After an equity **sell** in the same loop tick, second pass: rank post-scan candidates and
+    # equal-split **remainder** buying power (after the main allocator) across top ``split_n`` names
+    # (``remainder / n`` per leg). Set ``require_equity_sell: false`` to allow split without a sell.
+    post_sell_reallocation:
+      enabled: false
+      require_equity_sell: true
+      min_freed_cash: 1.0
+      split_n: 5
+    # After an equity sell: for this many **minutes**, allocator ignores the soft–hard tranche and only
+    # enforces the **hard** per-name line (``0`` = never). See :meth:`src.live.exits.LiveExitContext.recent_sell_within`.
+    ignore_soft_caps_after_sell_minutes: 5
+    # **Rebalancing:** if deployable cash is short for a tranche, sell this fraction of the **lowest-score** held
+    # line to fund the buy; rotation swaps also use this full fraction (not capped at ``min_trade_size``) when on.
+    rebalance_fund_from_weakest: true
+    rebalance_weakest_trim_fraction: 0.30
+    # No net notional add from the allocator: trim buys so sum(sells) >= sum(buys). Set false to allow net buys.
+    require_net_sell_gte_buy: true
+    # When long gross (%% of equity) is at least this fraction of the **effective** max (regime / entry-wave
+    # aware, same as exposure gates), also cap aggregate buys at net_reduction_max_buy_to_sell_ratio × aggregate sells
+    # (0.5 ⇒ buys ≤ half of sells). Set net_reduction_near_cap_relative_to_max: 0 to disable this stricter pass.
+    net_reduction_near_cap_relative_to_max: 0.9
+    net_reduction_max_buy_to_sell_ratio: 0.5
+    # Risk override: when book gross (long MV / equity) is above this **fraction** (0.95 = 95%%, YAML may use 95 or 0.95), use ``mode: risk_control``; by default buys are not submitted (same as over-max-gross).
+    risk_control_gross_frac: 0.95
+    risk_control_block_buys: true
+    # Under-invested: when long gross (%% of equity) is **strictly below** this fraction, allocator ``mode: deploy`` (favor deployment; not risk_control). Set ``0`` to always use ``normal`` when not over risk threshold.
+    min_gross_deployment_pct: 0.80
+    # If ``regime_score == 4`` and gross (fraction of equity) is **below** ``min_gross_deployment_pct``,
+    # set force_allocate: skip ``require_net_sell_gte_buy`` so buy-only plans are not fully stripped (reaches min deploy).
+    bullish_force_minimum_deploy: true
+    # In ``deploy`` mode, only the top *N* candidates by ``score`` (3–5) are sent to the allocator, then notional is allocated.
+    deploy_top_n_signals: 3
+    # Top ``top_n`` ranked signals (by ``score``) get a larger **tranche** (``min_trade_size`` scale); the rest a smaller one.
+    # See :func:`src.capital_allocator_loop.rank_allocator_candidates` and :class:`src.capital_allocator.CapitalAllocator`.
+    concentration_bias:
+      enabled: true
+      top_n: 2
+      top_tranche_scale: 1.75
+      rest_tranche_scale: 0.50
+    # If the plan is still empty: equal-split *cash* across top ``empty_alloc_top_n`` by ``score`` (BUY each), then apply_cooldown.
+    empty_alloc_top_n: 3
+    # Operator alias: allocator.enable_equal_split_fallback — equal-split top-N when allocate() returns empty.
+    fallback_on_empty_alloc: true
+    etf_fallback_enabled: false
+    etf_fallback_max_notional_pct: 5
+    etf_fallback_only_when_no_news_candidates: true
+    # When ``fallback_on_empty_alloc`` is off (or equal-split/cooldown yield no rows) and exactly one
+    # candidate remains, synthesize one BUY at max(ref price, ``min_realloc_leg``) so the line is not dropped.
+    force_minimum_trade_single_candidate: true
+    # Idle fallback is intentionally capped below the main book cap so fixed-size placeholder BUYs
+    # do not consume capacity needed by later dynamic-scan entries.
+    idle_fallback:
+      enabled: false
+      max_gross_pct: 85
+      prefer_dynamic_symbols: true
+    # Re-rank signals: favor underweight sector/theme sleeves and light theme overlap vs re-scaling held names (e.g. SPY/SMH adds after a trim).
+    prioritize_diversification: true
+    diversification_reentry_scale: 0.55
+    diversification_sector_weight: 0.35
+    diversification_theme_weight: 0.35
+    # %% of equity in a sleeve at which extra “underweight” boost tapers off (see :func:`reorder_allocator_candidates_diversification`).
+    diversification_reference_exposure_pct: 30.0
+    # Bullish / high-score regimes: slash allocator ``score`` on staples/defensive names so they don’t lead deploy (reduces defensive drift).
+    defensive_drift:
+      enabled: true
+      regime_min_score: 4
+      priority_scale: 0.15
+      symbols: [KO, PEP, PG, XLP]
+      match_sector_substrings: [staple, defensive, utilities]
+      match_theme_substrings: [defensive, staple, utilities, consumer_staples]
+  # Single-symbol stock cap vs equity (percent points, ``"8%"``, or ``dynamic`` + ``symbol_allocation_cap_dynamic``).
+  # Align with ``capital_allocator.symbol_caps.hard`` so the merged cap is not stricter than allocator hard.
+  max_single_position_pct: 22.0
+  # Optional equity-aware cap; used only when ``symbol_allocation_cap`` is ``dynamic`` (omit cap above).
+  symbol_allocation_cap_dynamic:
+    # Used only when symbol_allocation_cap is ``dynamic``: cap = min(max_pct, max(floor_pct, 100×min_trade_usd/equity)).
+    max_pct: 25
+    min_trade_size_usd: 1000
+    floor_pct: 25
+  # Legacy: if set and symbol_allocation_cap is omitted, this is used instead.
+  # max_allocation_per_symbol: "25%"
+  # If set, only these tickers may receive stock BUY orders (trend longs, inverse ETF adds/scaling).
+  # Omit for no restriction. List bear tickers (e.g. SQQQ) if you use them with an allowlist.
+  # allowed_symbols_for_stock_orders: []
+  # Structural fix vs book freeze: prefer rotation (replacement) over only loosening caps / relief.
+  # At max names, dispatch still evaluates weakest vs incoming (at-cap path) even if this is false.
+  # For **sizing-reject** recovery (``consider_replacement_for_sizing_reject``): when the reject is
+  # not the book-level message ``portfolio caps leave no room``, full-line rotation is skipped unless
+  # ``enable_replacement: true`` — reduces unnecessary sells (e.g. per-name cap) on symbols like staples.
+  enable_replacement: true
+  replacement:
+    # Recommended immediate operator set: threshold 0.25, jitter 0.05, stale-after 8d, $750 min lot/incoming,
+    # max 1 replacement per entry scan, no equal-strength swap (see portfolio_replacement / portfolio_score_replacement).
+    # Weakest hold must be at least this many minutes old (tracker entry_time) before rotation sell (0 = off).
+    # Churn (CRITICAL): 60–120 m band — tune with global strategy.exits.min_hold_minutes.
+    min_hold_minutes: 60
+    # When true: at max positions, sell weakest and buy new if new signal score > weakest (no extra gap vs
+    # replacement_threshold / swap_threshold). Still enforces min_hold, size mins, replacement_strength_ok.
+    rotate_on_stronger_signal: true
+    # In (0, 1): incoming jittered strength must exceed weakest tracked signal_strength by at least this (non-stale).
+    replacement_threshold: 0.25
+    strength_jitter_max: 0.05
+    # If weakest hold bars_held > this, allow replacement even when new strength ≤ weakest (live: calendar days).
+    replace_if_weakest_older_than_bars: 8
+    # Weakest must be at least this many bars_held (calendar days in tracker) before it may be rotated out.
+    max_position_age_bars: 20
+    # Disabled by default: preserve young-position protection unless an operator
+    # explicitly permits exceptional score-gap replacement.
+    young_position_exceptional_override:
+      enabled: false
+      min_strength_gap: 0.50
+      min_incoming_strength: 0.85
+    allow_equal_replacement: false
+    min_market_value_to_replace_usd: 750
+    min_notional_for_incoming_usd: 750
+    max_replacements_per_entry_cycle: 3
+    # 1.0 = one market sell (full exit) before the new buy. (0,1) with default: two legs = full exit in two orders.
+    # When ``rotate_partial_replacement: true`` and tranche in (0,1): only the first tranche is sold; the rest
+    # of the line stays open; the new buy is **notional-capped** to ``min(planned, est. proceeds)``.
+    rotate_sell_tranche_fraction: 1.0
+    rotate_partial_replacement: false
+    # Strength-swap only: sell up to ``max_sells`` laggards (weakest first) to fund a strong new name
+    # (e.g. XLF+WMT → NVDA) instead of rotating a single line. ``prefer_sell_count: 0`` = stop when
+    # cumulative market value covers ``min(incoming notional, min_notional_for_incoming_usd)``; set 2
+    # to always sell two names when two qualify. ``enabled: false`` = one-weakest behavior.
+    replace_losers_with_winners:
+      enabled: false
+      max_sells: 2
+      prefer_sell_count: 0
+    # Weakest eligible hold for rotation / RFC: ``entry_signal_strength`` (default, persisted entry strength);
+    # ``pnl_momentum_trend`` / health — *mean* of pnl_leg + momentum + trend on [0,1] from daily bars; or
+    # ``composite_position_score`` (aliases: ``weakest_simple``, ``momentum_pnl_trend_strength_sum``) —
+    # *unweighted three-term sum* on [0,3]; *lowest* = weakest.
+    weakest_pick: entry_signal_strength
+    # Score-based replacement only (``replacement_threshold`` not in (0,1)): ``classic`` = score_position 0–100;
+    # ``weighted_position`` = min(eligible, key=weighted composite 0–1), scaled to 0–100 vs score_signal.
+    swap_position_score: classic
+    # ``default`` — strength gap or score swap per ``replacement_threshold``; ``min_unrealized_pl_vs_signal`` —
+    # weakest eligible long by min unrealized P/L %% vs incoming strength (see consider_replacement).
+    strategy: min_unrealized_pl_vs_signal
+    # Churn guard (min_unrealized_pl_vs_signal): replace only if new_strength > weakest_strength * ratio.
+    # Set to 1.0 to disable margin. Omit for default 1.2.
+    churn_guard_min_new_vs_weakest_ratio: 1.2
+    # When OHLCV is available, min_unrealized_pl_vs_signal also requires is_stronger(sig, pos):
+    # trend, momentum, pullback, and weakest unrealized P/L fraction < 1.0 (see portfolio_replacement).
+    # Legacy override for score-gap (prefer portfolio.swap_threshold).
+    # swap_score_threshold: 10
+  # When a new entry is blocked by buying power: optionally sell a fraction of the weakest tracked
+  # eligible long (same weakest logic as replacement) to free cash, then retry (see src/rebalance_free_capital.py).
+  # Informal synonym some operators use: rebalance_on_signal — trim-to-fund when pursuing a new entry on low BP.
+  rebalance_free_capital:
+    enabled: true
+    # weakest = lowest replacement / signal score; largest_exposure_notional = abs broker market_value desc, try N (see largest_exposure_max_try).
+    trim_target: largest_exposure_notional
+    largest_exposure_max_try: 3
+    # When enabled: notional market sells on top `market_value` lines (e.g. $1500 x 3) instead of many small-share trims. Needs max_trims_per_entry_scan >= max_symbols.
+    bulk_trim:
+      enabled: true
+      notional_per_symbol_usd: 1500
+      max_symbols_per_pass: 3
+      # Post–bulk-trim buy cooldown (operator rebalance_cooldown_minutes; mitigates chasing after RFC trims).
+      buy_cooldown_minutes: 120
+      # After any enabled bulk notional sell, the post-scan capital allocator is skipped for the **next** main loop pass (one cycle) for that user (``run_alpaca_loop`` only).
+    # New entry but insufficient BP: sell a slice of the mapped eligible long (weakest or largest notional), refresh BP, retry.
+    # run_alpaca_loop: slice size is **not** this band — it uses gross-book tiers (0.6 / 0.4 / 0.25 of position when
+    # gross/eq >1.05 / >1.0 / else) via :func:`src.rebalance_free_capital.trim_fraction_by_gross_leverage`. The
+    # keys below still apply to :func:`rebalance_trim_fraction_for_attempt` for other callers and documentation.
+    # Trim band as %% of position shares; trim_band_uniform true = random in [min,max] each trim, false = midpoint only.
+    trim_pct_min: 20
+    trim_pct_max: 30
+    trim_band_uniform: true
+    # trim_fraction: 0.15   # optional 0–1 override; ignored if trim_pct_min/max are set
+    max_trims_per_entry_scan: 3
+    exclude_incoming_symbol: true
+    # After partial trims: if still short on BP, fully exit the weakest long when incoming composite
+    # strength (same as signal ranking) is strictly greater than that position's stored signal_strength.
+    # Runs when true regardless of ``rebalance.trigger`` tokens (see plan_full_exit_weakest_when_stronger).
+    rotate_full_weakest_when_stronger: true
+    # When bulk_trim and gross_liquidation are both enabled, gross-cap over-max uses **bulk** notional lines; share-based de-lever plan is skipped that cycle.
+    # When enabled, exposure_gates gross-cap trim (over max book) sells **toward** target long gross as %% of equity
+    # (same scale as ``compute_exposures`` gross_pct) by **notional gap / passes** per live cycle, not a fixed %% of the line.
+    # E.g. book 107% vs target 95% with passes=2 → about half the 12%%-of-equity gap in $ from the chosen name per trim.
+    gross_liquidation:
+      enabled: true
+      target_gross_pct: 95.0
+      passes: 2
+    # Top *n* eligible lines by |market_value|: apply a smaller trim / bulk notional (intensity) so core names
+    # are reduced **less aggressively** (see :func:`src.rebalance_free_capital.get_top_n_positions`).
+    top_position_protection:
+      enabled: true
+      n: 3
+      intensity_mult: 0.5
+    # First RFC partial trim in an entry scan: skip lines with unrealized PnL %% above this vs |cost_basis| (winners). 0 = off.
+    first_pass_winner_pnl_skip_pct: 3.0
+    # Pro-style gross de-lever when book > effective cap: (1) ~50%% of weakest, (2) if still over — full exit weakest, (3) if still over — pro-rata notional trims. When true, the gross-cap path does **not** run bulk/legacy in the same handler.
+    two_phase_gross_cap_unwind:
+      enabled: false
+      phase1_weakest_trim_fraction: 0.5
+      proportional_max_submits: 25
+  # Tie-break when strengths are equal (top-N plan, deferred replacement merge). Earlier = higher priority.
+  priority_symbols: ["SPY", "NVDA", "MSFT", "SMH"]
+  # Operator aliases for underinvestment policy: when the live gross long book is below this fraction,
+  # allocator deploy mode engages; ``force_deploy_if_signals`` maps to
+  # ``capital_allocator.bullish_force_minimum_deploy`` when the nested key is unset.
+  min_deploy_pct: 0.80
+  force_deploy_if_signals: true
+  # Phase-1 portfolio brain (see src/portfolio_brain.py): structured gate before options/stock routing.
+  portfolio_brain:
+    enabled: true
+    # When high_cash_deploy_pct triggers: multiply concentration ceilings (1.0 = no change; cap 3.0 in code).
+    when_high_cash:
+      bucket_cap_mult: 1.1
+      symbol_cap_mult: 1.1
+      sector_exposure_mult: 1.1
+  # Operator-friendly alias for ranked top N when ``signal_ranking.max_signals_per_loop`` is omitted.
+  allocator:
+    # ``refuse_to_allocate_if_gross_above`` may live here as fallback when omitted under ``capital_allocator``.
+    # ``dynamic_risk_budget`` — soft bucket targets + cadence; bypasses rigid max_stock / fixed reserve
+    # / separate inverse YAML (hedge bucket → inverse cap). Rebalance tick logs in ``run_alpaca_loop``.
+    mode: dynamic_risk_budget
+    rebalance_frequency: 15m
+    # Optional: %% of equity held back as cash for deployable-BP (replaces min_cash_reserve_pct in DRB mode).
+    cash_buffer_pct: 0
+    buckets:
+      core_trend: { target: 40 }
+      momentum: { target: 25 }
+      mean_reversion: { target: 15 }
+      hedge: { target: 10 }
+      opportunistic: { target: 10 }
+    type: ranked
+    max_positions: 10
+    top_n_signals: 3
+    top_n: 6
+    # Max gross book increase in one allocator pass: min(book cap, current gross + this × equity). Omit for no per-cycle ramp limit.
+    max_gross_increase_per_cycle: 0.05
+    # When ``soft_cap_mode``, per-symbol $ cap (``capital_allocator.symbol_cap``) uses reduced adds instead of skipping: ``min_trade_size * cap_penalty_multiplier``; also clamps when a full min would break the cap.
+    soft_cap_mode: true
+    cap_penalty_multiplier: 0.5
+    # A sleeve at its per-bucket MV cap may still add if other sleeves (e.g. ``mega_cap_beta``) are below cap — borrow unused capacity in aggregate.
+    allow_cross_bucket_rebalance: true
+  # Rank passing signals each scan; **cap** is ``effective_ranked_signals_cap`` (Top-K when
+  # ``allocation.rank_by_signal_strength``). This key applies when that flag is false.
+  # When ``allocation.rank_by_signal_strength`` is **true**, ``ranking_mode`` is ignored for Top-K; use ``allocation.rank_top_k_by`` instead.
+  # ranking_mode: tier_then_strength — SPY/QQQ > NVDA/MSFT > sector ETFs > others, then strength_eff (only if Top-K uses legacy path).
+  # ranking_mode: momentum_rs_volume — same pillar triple as allocation.rank_top_k_by when not using strength Top-K.
+  # ranking_mode: composite_score — weighted pillars (composite_weights), top N.
+  # ranking_mode: signal_priority — unweighted sum trend+momentum+volatility_expansion+relative_strength (each [0,1], max 4).
+  signal_ranking:
+    enabled: true
+    # Fallback cap when ``allocation.rank_by_signal_strength`` is false (else Top-K uses ``allocation.allocate_top_n``).
+    max_signals_per_loop: 5
+    # Used for composite_score mode and trend_long_composite_rank / strength_eff denominator.
+    composite_weights:
+      trend_strength: 0.35
+      momentum: 0.30
+      volatility_expansion: 0.10
+      relative_strength: 0.25
+    ranking_mode: signal_priority
+    # Event-driven composite bonuses (+1 each when fired); see src/signal_ranking.trend_long_composite_rank
+    event_triggers:
+      enabled: true
+      volatility_breakout:
+        enabled: true
+        atr_multiple: 1.5          # today ATR%% > multiple × mean ATR%% over prior baseline_bars (excl. today)
+        baseline_bars: 20
+      volume_anomaly:
+        enabled: true
+        volume_multiple: 2.0       # last volume > multiple × mean volume over prior avg_volume_bars (excl. today)
+        avg_volume_bars: 20
+    # Open long with entry / last add within recent_minutes → lower rank vs other signals (tier + weaker sort keys).
+    recent_add_priority:
+      enabled: true
+      recent_minutes: 2880         # e.g. 48h wall-clock — see position_tracker.last_entry_within
+      strength_eff_multiplier: 0.72
+      composite_score_multiplier: 0.72
+      extra_priority_tier: 1       # add this many tier buckets toward “other” (capped at bottom tier)
+    # sector_etf_symbols: []  # optional extra tickers merged into default sector-ETF set
+  # Batch mode: collect passing trend-long stock signals this scan, then rank (fresh ∪ held), keep top
+  # max_positions, sell demotions, buy promotions in strength order. Fresh ranks use composite score
+  # (trend_strength + momentum + pnl_potential) / denom + optional replacement jitter; held
+  # names use tracked signal_strength + jitter (see src/signal_ranking.py). When enabled, per-symbol
+  # replacement above is skipped for stocks; options routing unchanged. Conflicts with incremental
+  # allow_add adds in the same pass — prefer allow_add: false or leave top_n disabled.
+  top_n_by_strength:
+    enabled: false
+
+# ---------------------------------------------------------------------------
+# 3) Position Sizing
+# ---------------------------------------------------------------------------
+position_sizing:
+  # Operator aliases for the live loop add-on gate: ``allow_add_to_winners`` maps to
+  # ``portfolio.allow_add`` and ``max_positions_per_symbol`` maps to
+  # ``risk.max_adds_per_symbol_per_day`` as ``max_positions_per_symbol - 1`` when the risk key is unset.
+  # ``add_on_strength`` enables the existing ``portfolio.add_on`` strength gate for add-ons.
+  # ``add_on_signal_threshold`` maps to ``portfolio.add_on.min_signal_strength``.
+  # ``base_position_pct`` drives the strategy_v2 baseline size as the effective operator alias.
+  base_position_pct: 0.08
+  allow_add_to_winners: true
+  max_positions_per_symbol: 3
+  add_on_strength: true
+  add_on_signal_threshold: 0.60
+  # Small-fill USD floor when ``small_fill.min_trade_value`` is omitted (alias of ``small_fill.min_trade_value``).
+  min_trade_dollars: 750
+  # Larger risk budget per new line (high conviction, fewer names).
+  risk_per_trade_pct: 0.70
+  max_open_risk_pct: 3.0
+  # Fallback per-name % cap when portfolio symbol cap is off (0). Otherwise sizer uses
+  # effective portfolio + risk merged cap (same as live skip gate).
+  max_exposure_per_symbol_pct: 22
+  max_symbol_exposure_pct: 12.5
+  max_position_pct: 0.22
+  # ~$25k: allow ~$3.5-4.0k in one name (pair with max_single_position_pct in portfolio).
+  max_position_dollar_cap: 6000
+  # Fallback when ``portfolio.max_sector_pct`` and ``risk.sector_cap_pct`` are unset; merged in effective_max_sector_sleeve_pct.
+  max_exposure_per_sector_pct: 30.0
+
+  # Floor / aim for new-line size as fraction of equity (``0.08``) or percent points (``8``); uses the larger of the two.
+  min_position_pct: 0.10
+  target_position_pct: 0.15
+  # Minimum target notional per new line (reserved for future sizer / allocator alignment).
+  min_position_dollar: 2000
+  # If sized shares < 1 but symbol/portfolio headroom (USD) is >= min_trade_value and covers one share, size to 1.
+  # Legacy key: min_trade_value_usd (same meaning as min_trade_value). Top-level ``min_trade_dollars`` used when omitted.
+  small_fill:
+    enabled: true
+  # When cap **remaining** is positive but less than one share at *price*, risk still wants ≥1 share:
+  # do not reject with ``symbol cap remaining yields zero shares`` — size one share (default) or full risk (``full_risk``).
+  micro_cap_relief:
+    enabled: true
+    mode: one_share
+
+  # After risk + symbol-cap shares: shares ← round(shares × confidence_score) when enabled.
+  # confidence_score = trend_strength + momentum_strength + volume_signal (each 0–1; same bars as composite rank).
+  # Requires callers to pass daily OHLCV into PositionSizer (trading engine / backtest / live bear paths do).
+  confidence_sizing:
+    enabled: true
+    # When true, skip the extra trend/momentum/volume share multiply if signal_strength_mapping is proportional
+    # (avoids double-scaling with composite entry strength).
+    suppress_when_signal_strength_proportional: true
+    momentum_bars: 10
+    volume_bars: 20
+    # ma_slow: 200   # optional override; else strategy.trend_following.ma_slow
+
+  # Book-level caps (gross overridden by ``portfolio.max_gross_exposure`` when that key is set).
+  max_gross_exposure_pct: 100.0
+  max_net_exposure_pct: 90.0
+  max_etf_exposure_pct: 45.0
+  max_inverse_etf_exposure_pct: 15.0
+  # Fallback max theme book %% when a theme is not listed under ``sector_caps`` (or ``sector_caps`` omitted).
+  max_theme_exposure_pct: 40.0
+  # Per-theme %% of equity cap for portfolio budget trim (``src.exposure.THEME_MAP`` buckets).
+  # ``tech`` applies to ai_growth + semis + high_beta_growth; ``others`` covers unlisted themes (e.g. financials, china, hedge).
+  sector_caps:
+    broad_index: 60
+    tech: 50
+    others: 40
+
+  # First ``top_n`` names in a ranked entry batch (best signal first) are *top signals*: multiply
+  # shares / notional and rebuild the buy order (see src/winner_allocation.py). Unranked path unchanged.
+  winner_allocation:
+    enabled: true
+    top_n: 2
+    size_multiplier: 1.75
+  # ATR-dollar risk unit: shares ≈ min(risk_budget / (price×ATR%×multiple), cap_remaining/price).
+  # Higher ATR% → smaller size at the same risk budget (volatile names size down vs stable ETFs).
+  volatility_sizing:
+    enabled: true
+    atr_risk_multiple: 1.0
+    # affine: map strength [0,1] between conviction_min_scale and conviction_max_scale.
+    # proportional: risk budget multiplier ≈ strength (with signal_strength_floor); allocation ∝ signal_strength.
+    signal_strength_mapping: proportional
+    signal_strength_floor: 0.06
+    conviction_min_scale: 0.5
+    conviction_max_scale: 1.50
+  # Scale risk budget down as long-stock book fills (vs equity × max_exposure_frac_for_heat).
+  portfolio_heat:
+    enabled: true
+    max_exposure_frac_for_heat: 0.60
+    min_risk_scale_at_full_heat: 0.25
+  # Position sizing reduction during high volatility regimes
+  high_vol_reduction:
+    enabled: true
+    atr_pct_threshold: 2.0     # when ATR% (14d) > this, reduce size
+    size_multiplier: 0.5       # multiply shares by this (e.g. half size)
+
+  # Dynamic multipliers (drawdown / conviction / strategy health); reserved for sizing pipeline.
+  dynamic_sizing:
+    enabled: true
+
+    drawdown_scaling:
+      dd_3_pct: 0.85
+      dd_5_pct: 0.70
+      dd_8_pct: 0.50
+
+    conviction_scaling:
+      strong: 1.15
+      medium: 1.00
+      weak: 0.70
+
+    strategy_health_scaling:
+      cold_threshold_winrate: 0.40
+      hot_threshold_winrate: 0.60
+      cold_multiplier: 0.75
+      hot_multiplier: 1.10
+
+leader_overrides:
+  symbols: ["SMH", "NVDA", "GOOGL", "AMZN", "SPY"]
+  max_symbol_exposure_pct: 15
+
+# ---------------------------------------------------------------------------
+# 4) Portfolio & Drawdown
+# ---------------------------------------------------------------------------
+portfolio_risk:
+  # Live loop: daily_pnl_pct = (equity - last_equity) / last_equity from the broker snapshot.
+  # When true, record_trade / record_order_activity do not add realized %% on top (avoids double-count vs MTM).
+  live_daily_pnl_from_equity_snapshot: true
+  # Max loss as a positive %% magnitude; trading stops when daily_pnl_pct <= -max_daily_loss_pct.
+  max_daily_loss_pct: 3.0
+  # Legacy (ignored if max_daily_loss_pct is set): negative threshold, same semantics.
+  # daily_loss_limit_pct: -2.0
+  max_drawdown_pct: -10.0
+  safe_mode_after_max_dd: true
+  recovery_criteria_pct: -8.0   # resume live after drawdown recovers to this
+  max_trades_per_day: 20
+  # Per-symbol order cap (see ``risk.max_trades_per_symbol_per_day`` — merged; blocks **entries** via engine gates).
+  max_trades_per_symbol_per_day: 4
+  # Full exit → round trip; see ``risk.max_round_trips_per_symbol``.
+  max_round_trips_per_symbol: 2
+
+# ---------------------------------------------------------------------------
+# 4b) Regime position sizing (bullish / neutral multipliers)
+# ---------------------------------------------------------------------------
+# Overrides ``market_regime.size_multipliers.bullish`` / ``neutral`` / ``defensive`` when set (see src/market_regime.py).
+regime:
+  neutral_size_mult: 1.0
+  bullish_size_mult: 1.25
+
+# ---------------------------------------------------------------------------
+# 4c) Market regime score (adjust position size by regime)
+# ---------------------------------------------------------------------------
+# Score 0–5: regime_score = trend_score + volatility_score + breadth_score + macro_score
+# (SPY/QQQ vs MA, VIX proxy vs threshold, HYG vs MA, TLT vs MA — see src/market_regime.py).
+# Condition labels (bullish/neutral/defensive) still drive size_multiplier below; entry_policy maps score to SQQQ vs long stance.
+market_regime:
+  enabled: true
+  # Regime score >= this: allow higher ATR on entries, relaxed volatility DNT, skip high-vol position size haircut (see strategy / trade_filters / position_sizing).
+  allow_high_volatility_min_regime_score: 3
+  symbols:   # Market Regime group (detect only; not in trade universe)
+    spy: SPY
+    qqq: QQQ
+    vix: VIXY       # volatility proxy; raise vix_threshold if using VIXY (e.g. 25)
+    hyg: HYG
+    tlt: TLT
+  ma_period_trend: 50           # for SPY/QQQ above MA
+  ma_period_rising_falling: 20  # for HYG rising / TLT falling
+  vix_threshold: 20
+  size_multipliers:
+    bullish: 1.25
+    neutral: 1.0
+    defensive: 0.5   # bearish / risk-off bucket (YAML may say "bearish" in prose; code uses defensive)
+  # Practical SQQQ vs trend-long mapping by regime score (see src/regime_entry_policy.py).
+  entry_policy:
+    enabled: true
+    severe_breakdown_min_pct_below_ma: 1.2   # QQQ must be this % below 50D MA
+    severe_breakdown_require_fresh_cross: true
+    # When scorer enabled but score missing (API gaps): conservative starter, severe required for SQQQ.
+    block_sqqq_when_regime_score_unavailable: false
+    require_severe_breakdown_when_regime_unavailable: true
+    sqqq_fraction_when_regime_unavailable: 0.35
+    long_fraction_when_regime_unavailable: 0.5
+    sqqq_notional_fraction_score_4_5: 1.0
+    long_notional_fraction_score_4_5: 1.0
+    sqqq_notional_fraction_score_3: 0.5      # starter SQQQ
+    long_notional_fraction_score_3: 0.75
+    sqqq_notional_fraction_score_2: 0.35      # small SQQQ starter
+    long_notional_fraction_score_2: 0.5       # longs smaller; MA stack required
+    sqqq_notional_fraction_score_0_1: 0.25    # only with severe breakdown gate
+    long_notional_fraction_score_1: 0.2       # mostly cash long book
+    long_notional_fraction_score_0: 0.0
+    score_1_block_all_longs: false            # true = no trend longs at score 1
+    score_0_block_all_longs: true              # score 0: no trend longs by default
+    # Score 2 SQQQ: keep notion×0.35; QQQ < 50D only; skip universe breakdown fresh-cross (see bear_etfs.breakdown).
+    score_2_sqqq_skip_fresh_cross: true
+    # Require **any** enabled sub-filter (OR). If all three false → no extra gate (only QQQ < 50D).
+    score_2_sqqq_filter_below_vwap: false    # intraday session VWAP from 1m bars
+    score_2_sqqq_filter_red_day: false        # last < today’s daily open (partial bar)
+    score_2_sqqq_filter_ma20_below_ma50: true  # daily structure: 20D MA < 50D MA on QQQ
+
+  # Intraday session **day type** (SPY 1m + optional VIX daily change). Stacks multipliers on top of
+  # ``size_multipliers`` / entry_policy. >1 on ``entry_interval_mult`` = **longer** gaps between core/dynamic entry scans.
+  day_types:
+    # Set true to classify each session (SPY 1m) and apply ``profiles`` multipliers in the live loop.
+    enabled: false
+    panic_session_return_pct: -0.85
+    panic_vix_change_ratio: 0.07
+    chop_max_range_pct: 0.7
+    chop_max_abs_return_pct: 0.12
+    trend_min_abs_return_pct: 0.35
+    trend_green_ratio_high: 0.57
+    trend_green_ratio_low: 0.43
+    drift_max_range_pct: 1.0
+    drift_min_abs_return_pct: 0.08
+    drift_green_ratio_min: 0.48
+    drift_green_ratio_max: 0.56
+    squeeze_narrow_lookback_bars: 30
+    squeeze_max_rel_range_pct: 0.45
+    squeeze_breakout_min_range_expand_pct: 0.2
+    profiles:
+      panic_selloff:
+        position_size_mult: 0.55
+        entry_interval_mult: 1.75
+        exit_interval_mult: 0.65
+        cooldown_mult: 1.45
+        gross_exposure_mult: 0.72
+      trend_day:
+        position_size_mult: 1.08
+        entry_interval_mult: 0.88
+        exit_interval_mult: 1.05
+        cooldown_mult: 0.92
+        gross_exposure_mult: 1.05
+      squeeze_day:
+        position_size_mult: 1.02
+        entry_interval_mult: 0.92
+        exit_interval_mult: 0.88
+        cooldown_mult: 1.0
+        gross_exposure_mult: 1.02
+      chop_day:
+        position_size_mult: 0.68
+        entry_interval_mult: 1.55
+        exit_interval_mult: 1.15
+        cooldown_mult: 1.35
+        gross_exposure_mult: 0.82
+      low_volatility_drift:
+        position_size_mult: 0.92
+        entry_interval_mult: 1.12
+        exit_interval_mult: 1.08
+        cooldown_mult: 1.08
+        gross_exposure_mult: 0.95
+      unknown:
+        position_size_mult: 1.0
+        entry_interval_mult: 1.0
+        exit_interval_mult: 1.0
+        cooldown_mult: 1.0
+        gross_exposure_mult: 1.0
+
+# ---------------------------------------------------------------------------
+# 4c) Options (v1 — long premium; loop uses Alpaca chain + these caps)
+# ---------------------------------------------------------------------------
+# Long premium only: buy calls/puts; no short premium / no selling uncovered.
+# Operator policy (enforced in code; see src/options_config.py, src/trend_long_ranked_dispatch.py):
+#   (1) No new option buys when gross %% of equity > disable_if_gross_exposure_above (80%% below).
+#   (2) No options when reduce_only / disable_if_reduce_only.
+#   (3) Max contracts per trade = max_contracts_per_trade (1).
+#   (4) Underlyings restricted to allowed_underlyings (SPY / QQQ / NVDA).
+#   (5) Wide spreads rejected by max_bid_ask_spread_pct + selector + execution spread gate.
+#   (6) never_bypass_stock_risk_caps: options pass strict bucket checks (no top-signal / cross-bucket
+#       waiver); portfolio-full option bypass disabled — cannot sneak past stock risk caps.
+# Canonical keys below; legacy aliases: allow_new_entries, fallback_to_stock, min_dte/max_dte (DTE window),
+# max_options_notional_pct (aggregate cap), max_contracts_per_trade (alias of v1_max_contracts_per_trade),
+# target_delta_min/max (alias of min_delta / cap on |delta|). See src/options_config.py.
+# ``max_positions`` / ``max_option_positions`` / ``max_open_option_positions`` cap open option lines.
+# ``min_delta`` / greeks: Alpaca ``OptionsSnapshot.greeks``; omit if your feed has no delta.
+options:
+  enabled: false
+  # Dedicated live-options pilot flag. Live option orders require this to be true
+  # and options.mode to be live/live_long_premium; false keeps live options blocked.
+  live_pilot_enabled: false
+  allow_new_entries: true
+  new_entries_enabled: true
+  # When true: strict risk-bucket test before any option order; disable bypass_when_full option retry.
+  never_bypass_stock_risk_caps: true
+  # Options routing: require ranked top-signal batch (aliases: top_signals_only, require_top_signal).
+  require_top_signal: true
+  allow_fallback_to_shares: true
+
+  # Aggregate long-premium vs equity (alias: total_exposure_limit, max_options_notional_pct, max_total_options_exposure_pct).
+  total_exposure_limit: 0.02
+  # One new option order: fraction of equity (min() with max_option_position_pct and aggregate cap). Alias: max_premium_pct_of_equity.
+  per_trade: 0.02
+  # DTE window (aliases: min_dte / max_dte on this block).
+  target_dte_min: 7
+  target_dte_max: 21
+  max_bid_ask_spread_pct: 12.0
+  dynamic_entry:
+    min_scanner_score: 50
+    min_news_score: 8
+    min_catalyst_score: 0.70
+    paper_spread_relaxation:
+      enabled: true
+      max_bid_ask_spread_pct: 12.0
+  # Phase 2: paper-trade options only (limit orders; no stock fallback when this mode is active).
+  mode: paper_only
+  # Per-order premium vs equity: use 2 for 2%%, or 0.02 for fraction of equity.
+  max_option_position_pct: 0.02
+  # Absolute premium debit cap per new option order; long-premium max loss cannot exceed this.
+  max_premium_per_trade: 500
+  max_option_positions: 1
+  max_positions: 1
+  data_stale_max_age_seconds: 120
+  # Hard cap on contracts per order (alias: v1_max_contracts_per_trade).
+  max_contracts_per_trade: 1
+  premium_over_budget_try_lower_strike: true
+  premium_over_budget_max_lower_strike_attempts: 200
+
+  # Delta band on chain rows (requires greeks). min_delta alias: target_delta_min; max: target_delta_max.
+  min_delta: 0.35
+  target_delta_min: 0.35
+  target_delta_max: 0.60
+
+  # Risk gates (see src/options_config.options_entry_environment_blocks): block new option buys only.
+  min_regime_score_for_entries: 2
+  # Allow new option entries only while gross long MV %% of equity is below this (alias of disable_if_gross_exposure_above).
+  enable_only_if_gross_below: 0.75
+  disable_if_reduce_only: true
+  disable_if_over_exposed: true
+
+  # Daily cap on **option entry** orders (ET day; see src/options_entry_limits.py).
+  max_option_trades_per_day: 1
+  # Paper-options observability/safety framework. Paper-only by default; live promotion remains report-only.
+  max_option_contracts_per_day: 1
+  max_daily_options_loss_dollars: 250
+  max_daily_options_loss_percent: 1.0
+  cooldown_minutes_after_entry: 180
+  cooldown_minutes_after_exit: 240
+
+  only_buy_options: true
+  allow_0dte: false
+  allow_weeklies: true
+
+  # Second-chance small call when equity book is full — off when never_bypass_stock_risk_caps is true.
+  bypass_when_full:
+    allow_when_full: false
+    max_option_allocation_per_trade: 0.04
+    min_signal_strength: 0.82
+
+  allowed_underlyings:
+    - SPY
+    - QQQ
+    - NVDA
+    - AAPL
+    - AMZN
+    - SMH
+    - TSLA
+    - META
+    - MSFT
+    - GOOGL
+    - AMD
+    - AVGO
+    - NFLX
+    - PLTR
+    - CRWD
+    - DDOG
+    - SNOW
+    - ARM
+    - MU
+    - TSM
+    - ADBE
+    - RDDT
+    - COIN
+    - MSTR
+    - HOOD
+    - SOFI
+    - UBER
+    - SHOP
+    - CRM
+    - NOW
+    - PANW
+    - NET
+    - MDB
+    - MRVL
+    - SMCI
+    - ANET
+    - INTC
+    - QCOM
+    - TXN
+    - BA
+    - JPM
+    - GS
+    - LLY
+    - UNH
+    - XOM
+    - CVX
+    - IWM
+    - XBI
+    - ORCL
+    - BABA
+    - INDA
+    - GOOG
+  allowed_symbols:
+    - SPY
+    - QQQ
+    - NVDA
+    - AAPL
+    - AMZN
+    - SMH
+    - TSLA
+    - META
+    - MSFT
+    - GOOGL
+    - AMD
+    - AVGO
+    - NFLX
+    - PLTR
+    - CRWD
+    - DDOG
+    - SNOW
+    - ARM
+    - MU
+    - TSM
+    - ADBE
+    - RDDT
+    - COIN
+    - MSTR
+    - HOOD
+    - SOFI
+    - UBER
+    - SHOP
+    - CRM
+    - NOW
+    - PANW
+    - NET
+    - MDB
+    - MRVL
+    - SMCI
+    - ANET
+    - INTC
+    - QCOM
+    - TXN
+    - BA
+    - JPM
+    - GS
+    - LLY
+    - UNH
+    - XOM
+    - CVX
+    - IWM
+    - XBI
+    - ORCL
+    - BABA
+    - INDA
+    - GOOG
+
+  contract_selection:
+    moneyness: ATM
+    min_open_interest: 500
+    min_volume: 100
+
+  entry_mapping:
+    bullish_signal: call
+    bearish_signal: put
+
+  trend_long_options_require_sqqq_and_strong_trend: false
+  trend_strong_min_pct_above_50d_ma: 0.50
+  min_regime_for_long: 2
+  min_bullish_regime: 4
+
+  exits:
+    automation_enabled: true
+    allow_overnight: false
+    force_close_minutes_before_close: 15
+    stop_loss_pct: 25
+    stop_loss_exit_limit_per_day: 2
+    profit_take_pct: 25
+    profit_trail_arm_peak_pct: null
+    profit_trail_exit_below_pct: null
+    simple_price_exit_gain_pct: 50
+    max_exit_spread_pct: 8.0
+    max_hold_days: 0
+    exit_if_underlying_breaks_signal: false
+    exit_if_underlying_loses_vwap: true
+    underlying_ma_period: 50
+    exit_before_market_close_min: 5
+
+  max_daily_loss_pct: 1.0
+
+  compliance:
+    block_if_pdt_risk: true
+    use_cash_account_safe_mode: true
+
+# ---------------------------------------------------------------------------
+# 5) Execution
+# ---------------------------------------------------------------------------
+execution:
+  # Mirrors ``risk`` / ``portfolio_risk`` per-symbol daily order cap (config_loader deep-merge).
+  max_trades_per_symbol_per_day: 4
+  strong_reentry_threshold: 0.65
+  # Optional overlay for ``entries.symbol_cooldown_minutes`` (live-loop minutes-after-last-entry cooldown).
+  # cooldown_minutes: 2
+  # Maps to ``entries.allow_add_to_existing_positions`` + portfolio add-on paths (config_loader).
+  allow_add_to_position: true
+  # Second overlay; wins over ``cooldown_minutes`` when both set (config_loader merge order).
+  add_position_cooldown_minutes: 45
+  # Minimum USD clip for equity buys: ``execution.min_order_notional`` / ``min_trade_dollars`` + ``entries.min_trade_size``.
+  min_trade_notional: 500
+  add_on_signal_threshold: 0.55
+  allow_fractional: true
+  # Alias of ``allow_fractional``; when both are set, ``allow_fractional`` wins if present.
+  allow_fractional_shares: true
+  # Pre-entry cash probe for fractional longs (live loop / inverse); use with ``allow_fractional`` so we do not require 1 full share of BP before sizing.
+  min_order_notional: 500
+  # Minimum USD notional for equity **buy** market orders (explicit or qty×mid); ``0`` = off. OCC options exempt.
+  min_trade_dollars: 500
+  # Equity **sell** partials: bump qty to at least this fraction of the open position and/or USD notional
+  # (``qty × mid``). Full exits (sell qty ≥ position) are unchanged. ``0`` = off. OCC options exempt.
+  min_sell_pct_of_position: 0.2
+  min_trade_value: 250
+  prefer_limit_orders: true
+  # If NBBO spread %% is **below** this, equity stock orders use **market**; at or above → **limit @ mid** (rounded).
+  # Options (OCC) still use prefer_limit_orders / inside_spread below. Omit or null for legacy always-market equity.
+  market_order_if_spread_below_pct: 0.2
+  # inside_spread: limit = bid + inside_spread_fraction×(ask−bid) for buys (sell: ask − same).
+  # mid_offset_ticks: legacy limit = mid ± tick_size × limit_order_offset_ticks.
+  limit_price_mode: inside_spread
+  inside_spread_fraction: 0.25
+  limit_price_round_decimals: 2
+  limit_order_offset_ticks: 1
+  # Hard ceiling: do not submit when bid/ask spread %% exceeds this (applied as min with max_spread).
+  skip_if_spread_above_pct: 3.5
+  # One %% cap for all equity names (scalar). Restore a ``large_caps`` / ``volatile`` dict in overrides for tiers.
+  # Bid/ask vs mid, same units as :attr:`~src.brokers.alpaca_client.QuoteInfo.spread_pct` (0.2 = 0.2%% of mid).
+  # Slightly widened to reduce transient spread-gate misses without loosening the harder 2.5%% ceiling.
+  max_spread_pct: 3.5
+  # After a failed :meth:`build_order`, retry with spread gate ignored (transient wide NBBO).
+  retry_on_spread_fail: true
+  # Extra attempts after the first (each retry uses ``ignore_spread_gate``).
+  retry_attempts: 2
+  max_spread_pct_to_trade: 3.5   # legacy fallback when max_spread_pct absent only
+  partial_fill_timeout_seconds: 30
+  cancel_replace_on_partial: true
+  max_slippage_bps: 10
+  block_strategy_if_slippage_bps_avg_exceeds: 25
+  # One engine wake (manage_positions + entry trim/replace in same loop tick): cap **sell** / cover
+  # orders per symbol so e.g. risk trim + stop + signal_exit cannot all fire in the same pass. ``0`` = off.
+  max_actions_per_symbol_per_cycle: 1
+  # When true, skip discretionary long exits (engine partial/TP trail, broker P/L trim, news, smart scale)
+  # if effective entry buying power is below ``entries.min_trade_size`` (see ``effective_buying_power_for_entries``).
+  # Stop-like exits, kill-switch, and risk trims earlier in the pass (cap breach, overweight) are not gated.
+  block_exits_if_no_reentry_capacity: true
+  # If a new buy would break per-bucket MV / equity, still allow when ``strength_eff`` is in the
+  # top ``top_signal_percentile`` of this entry wave's ``strength_cohort`` (see ranked scan; 2+ names). Single-name waves are never overridden.
+  allow_bucket_override_for_top_signals: true
+  top_signal_percentile: 0.2
+  # When true, do not partial/full ``rebalance_free_capital`` sells to fund a new long if the
+  # incoming name is a **strong** signal: in the top ``top_signal_percentile`` of *strength_cohort*
+  # (2+ values), or else if ``incoming_strength`` ≥ ``rebalance_incoming_strength_block_min``
+  # (default 0.85) when the cohort is missing or has one name.
+  disable_rebalance_if_strong_signals: true
+  rebalance_incoming_strength_block_min: 0.85
+  # When this many entry candidates in one scan have ``strength_eff`` ≥ ``strong_signal_strength_min``,
+  # min cash reserve is set to 0 for deployable buying power (fully invested subject to broker BP).
+  strong_signals_count: 5
+  # Trend-long routing / entry-wave “strong” count (also allocator vs equity batch); lower = more names qualify.
+  strong_signal_strength_min: 0.72
+  # Skip **discretionary** equity sells in the exit pass and RFC/cash trim sells when the position's
+  # last buy/scale (tracker) was within this many minutes. Stop-like, kill-switch, and symbol-cap
+  # rebalance still sell. ``0`` = off.
+  no_sell_within_min_of_buy: 30
+  # Re-entry: wait after a **recorded** stop/profit exit in engine state (same source as
+  # ``last_stop_loss_at`` / ``last_profit_exit_at``). Stricter of this and
+  # ``entries.per_symbol_sell_cooldown_min`` is applied. Defaults: 30m stocks; 60m for
+  # ``symbol_cooldown_etf_symbols`` in code if ``symbol_cooldown_etf_minutes`` is omitted.
+  symbol_cooldown_minutes: 20
+  symbol_cooldown_etf_minutes: 20   # shortened (was 60) same-symbol re-entry wait for ETF tier
+  symbol_cooldown_etf_symbols: [SPY, XLP]
+  # Post-exit re-entry: uses this shorter window (vs default ETF/stock tiers) — list your top-momentum names.
+  symbol_cooldown_top_momentum_symbols: [RGTI, QBTS, IONQ]
+  symbol_cooldown_top_momentum_minutes: 25
+  min_recent_exit_reentry_minutes: 60
+  low_regime_top_n_regime_score_max: 3
+  low_regime_top_n_stock_entries: 5
+
+# ---------------------------------------------------------------------------
+# 7) Broker (Alpaca)
+# ---------------------------------------------------------------------------
+broker:
+  provider: alpaca
+  firm: alpaca
+  # paper: true  = paper trading (no real money).  paper: false  = LIVE (real money).
+  # Override without editing file: APCA_PAPER=false or ALPACA_LIVE=true for live; APCA_PAPER=true for paper.
+  paper: false
+  # Run continuously until market close (no user interaction):
+  #   python run_alpaca_loop.py
+  run_until_close: false
+  exit_check_interval_minutes: 12   # legacy; prefer timing.exit_interval_min (stop/target/trail/time cadence)
+  entry_check_interval_minutes: 10  # legacy; prefer timing.entry_interval_min
+  # Retry on API connection drops (e.g. "Remote end closed connection")
+  # api_retry_times: 3
+  # api_retry_delay_sec: 3.0
+  # data_feed: iex   # free. Use "sip" only if you have a paid data subscription.
+  # options_feed: indicative   # Alpaca option chain: "indicative" (default) or "opra" (paid subscription)
+  trade_update_stream:
+    # Optional order/trade update stream. Disabled by default; REST polling remains fallback/source of truth.
+    enabled: false
+  # API keys from environment (never put real keys in this file):
+  #   Paper: APCA_API_KEY_ID, APCA_API_SECRET_KEY  (from Alpaca Paper Trading → API Keys)
+  #   Live:  ALPACA_LIVE_API_KEY_ID, ALPACA_LIVE_API_SECRET_KEY  (from Alpaca Live → API Keys; Alpaca uses separate keys for live)
+  #   Or set APCA_* to live keys when running --live (then use paper keys only when running --paper).
+  # Paper base URL: https://paper-api.alpaca.markets   Live: https://api.alpaca.markets
+
+
+# ---------------------------------------------------------------------------
+# 8) Guarded live AutoOps deployment
+# ---------------------------------------------------------------------------
+autoops:
+  # Only ./bin/algo autoops deploy-latest --live uses these gates.
+  # The log analyzer remains read-only and never restarts services.
+  live_auto_deploy_enabled: true
+  live_auto_restart_enabled: true
+  live_post_deploy_verify_enabled: true
+  live_end_day_analysis_enabled: true
+  live_end_day_issue_enabled: true
+  live_end_day_codex_enabled: true
+  live_end_day_codex_autostart_enabled: true
+  codex_precheck_enabled: true
+  codex_max_issue_tokens: 50000
+  codex_max_issue_runtime_minutes: 45
+  codex_large_issue_requires_decomposition: true
+
+# ---------------------------------------------------------------------------
+# 9) Read-only automated log analysis
+# ---------------------------------------------------------------------------
+analysis:
+  # Live GitHub issue creation is enabled for the read-only log analyzer.
+  # Timer-safe thresholds still apply; market-data noise is suppressed in timer mode.
+  # The analyzer never restarts services or changes trading behavior.
+  enabled: true
+  github_issue_enabled: true
+  interval_minutes: 5
+  lookback_minutes: 30
+  duplicate_window_hours: 24
+  processor_label_enabled: false
+  processor_labels:
+    paper: "processor:mac-paper"
+    live: "processor:live"
+  # Post-fix comments and auto-close apply only to matching analyzer-created issues.
+  # Service restarts and auto-merge are not performed by this read-only analyzer.
+  github_comment_enabled: true
+  auto_close_resolved_issues: true
+  issue_thresholds:
+    skip_reason: 5
+    traceback: 1
+    exception: 1
+    service_restart: 2
+    entry_eval_to_skip: 10
+    allocator_dispatch_skip: 3
+    unstable_quote: 150
+    spread_too_wide: 15
+    expected_strategy_skip: 50
+    pipeline_skip_after_entry: 1
+  paper_issue_thresholds:
+    skip_reason: 5
+    traceback: 1
+    exception: 1
+    service_restart: 2
+    entry_eval_to_skip: 3
+    allocator_dispatch_skip: 3
+    unstable_quote: 5
+    spread_too_wide: 5
+    expected_strategy_skip: 50
+    pipeline_skip_after_entry: 1
+
+# ---------------------------------------------------------------------------
+# 6) Compliance (PDT, etc.)
+# ---------------------------------------------------------------------------
+compliance:
+  # Alpaca may still reject orders (e.g. API 40310100 pattern day trader) on restricted accounts; the app cannot override the broker.
+  pdt_min_equity: 25000
+  pdt_enabled: true
+  margin_account: true
+  # Below $25k on a margin account: never submit same-day closes (stocks, options, short covers) — avoids PDT / 40310100 churn.
+  avoid_same_day_close_below_pdt_equity: true
+  day_trade_count_reset_calendar: "rolling_5_business_days"
+  best_execution_note: "Broker has best execution duty; app enforces limits only."

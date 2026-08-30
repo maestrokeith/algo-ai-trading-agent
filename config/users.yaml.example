@@ -1,0 +1,38 @@
+# Multi-User Account Configuration
+# Copy this file to users.yaml and fill in your user details.
+# If users.yaml does not exist, the system runs in single-user mode
+# using the standard APCA_API_KEY_ID / APCA_API_SECRET_KEY env vars.
+#
+# Each user has:
+#   - id:               Unique identifier (used in logs, position files, DB)
+#   - alpaca_key_env:   Name of the env var holding this user's Alpaca API key
+#   - alpaca_secret_env: Name of the env var holding this user's Alpaca secret
+#   - paper:            true = paper trading, false = live (real money)
+#   - overrides:        (optional) Config keys to override from default.yaml
+#                       Nested keys are deep-merged onto the base config.
+#
+# Portfolio rotation (strength mode) defaults in default.yaml — recommended immediate values:
+#   replacement_threshold: 0.25, strength_jitter_max: 0.05, replace_if_weakest_older_than_bars: 8,
+#   min_market_value_to_replace_usd: 750, min_notional_for_incoming_usd: 750,
+#   max_replacements_per_entry_cycle: 1, allow_equal_replacement: false
+#
+# Post–profit-booking re-entry price (see src/profit_reentry_gate.py):
+#   allow_reentry_on_pullback: true, reentry_price_buffer_pct: 0.5
+
+users:
+  - id: user1
+    alpaca_key_env: USER1_APCA_API_KEY_ID
+    alpaca_secret_env: USER1_APCA_API_SECRET_KEY
+    paper: true
+    overrides:
+      position_sizing:
+        max_position_dollar_cap: 1000
+        risk_per_trade_pct: 0.5
+
+  - id: user2
+    alpaca_key_env: USER2_APCA_API_KEY_ID
+    alpaca_secret_env: USER2_APCA_API_SECRET_KEY
+    paper: false
+    overrides:
+      position_sizing:
+        max_position_dollar_cap: 5000

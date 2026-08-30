@@ -1,0 +1,15 @@
+[Unit]
+Description=AlgoSphere Level 1 failure reporter for %i
+Documentation=file:/opt/algosphere/algo-ai-trading-agent/docs/OPERATIONS.md
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/algosphere/algo-ai-trading-agent
+Environment=PYTHONPATH=/opt/algosphere/algo-ai-trading-agent
+ExecStart=/opt/algosphere/algo-ai-trading-agent/scripts/report_algo_failure_to_github.sh %i
+User=algosphere
+Group=algosphere
+
+# Reporting-only safety: collect diagnostics and create GitHub issues only.
+NoNewPrivileges=true
+PrivateTmp=false

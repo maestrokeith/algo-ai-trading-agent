@@ -1,0 +1,276 @@
+@import url("https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@300;400;500;600&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&display=swap");
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* ============================================================
+   TAILWIND v4 THEME — ALGOSPHERE TACTICAL TERMINAL
+   Overrides shadcn default theme with our dark amber terminal
+============================================================ */
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  /* shadcn semantic tokens — wired to our terminal palette */
+  --color-background:        #060810;
+  --color-foreground:        #D4DAE8;
+  --color-card:              #090d18;
+  --color-card-foreground:   #D4DAE8;
+  --color-popover:           #090d18;
+  --color-popover-foreground:#D4DAE8;
+  --color-primary:           #FFB300;
+  --color-primary-foreground:#060810;
+  --color-secondary:         #0b1020;
+  --color-secondary-foreground: #D4DAE8;
+  --color-muted:             #0b1020;
+  --color-muted-foreground:  #5A6A88;
+  --color-accent:            #141c30;
+  --color-accent-foreground: #D4DAE8;
+  --color-destructive:       #FF3B5C;
+  --color-border:            #141c30;
+  --color-input:             #141c30;
+  --color-ring:              #FFB300;
+  --radius:                  0rem;
+
+  /* AlgoSphere custom tokens */
+  --color-bg:           #060810;
+  --color-panel:        #090d18;
+  --color-panel-alt:    #0b1020;
+  --color-amber:        #FFB300;
+  --color-amber-bright: #FFC940;
+  --color-green:        #00D48B;
+  --color-red:          #FF3B5C;
+  --color-blue:         #3B8BFF;
+  --color-text-primary: #D4DAE8;
+  --color-text-dim:     #5A6A88;
+  --color-text-muted:   #3D4A63;
+
+  /* Font families */
+  --font-display: 'Bebas Neue', sans-serif;
+  --font-mono:    'DM Mono', monospace;
+  --font-ui:      'Barlow Condensed', sans-serif;
+  --font-sans:    'Barlow Condensed', sans-serif;
+}
+
+/* ============================================================
+   CSS VARIABLES — DARK THEME (default)
+============================================================ */
+:root,
+:root.dark {
+  --bg:           #060810;
+  --bg-panel:     #090d18;
+  --bg-panel-alt: #0b1020;
+  --border:       #141c30;
+  --amber:        #FFB300;
+  --amber-bright: #FFC940;
+  --amber-dim:    rgba(255, 179, 0, 0.08);
+  --amber-mid:    rgba(255, 179, 0, 0.18);
+  --green:        #00D48B;
+  --green-dim:    rgba(0, 212, 139, 0.12);
+  --red:          #FF3B5C;
+  --red-dim:      rgba(255, 59, 92, 0.12);
+  --blue:         #3B8BFF;
+  --text-primary: #D4DAE8;
+  --text-dim:     #5A6A88;
+  --text-muted:   #3D4A63;
+  --scanline:     rgba(0, 0, 0, 0.06);
+  --dot-color:    #1a2540;
+  --glow-color:   rgba(255, 179, 0, 0.06);
+}
+
+/* ============================================================
+   CSS VARIABLES — LIGHT THEME
+   "Warm Operations Room" — parchment + dark amber
+============================================================ */
+:root.light {
+  --bg:           #F2EDE3;
+  --bg-panel:     #EDE7D9;
+  --bg-panel-alt: #E6DFCF;
+  --border:       #C9BFA8;
+  --amber:        #B8750A;
+  --amber-bright: #D4890C;
+  --amber-dim:    rgba(184, 117, 10, 0.10);
+  --amber-mid:    rgba(184, 117, 10, 0.20);
+  --green:        #007A52;
+  --green-dim:    rgba(0, 122, 82, 0.12);
+  --red:          #C4293E;
+  --red-dim:      rgba(196, 41, 62, 0.10);
+  --blue:         #1A6FD4;
+  --text-primary: #1A1F2E;
+  --text-dim:     #4A5568;
+  --text-muted:   #8A9BB8;
+  --scanline:     rgba(0, 0, 0, 0.025);
+  --dot-color:    #9CA8BE;
+  --glow-color:   rgba(184, 117, 10, 0.05);
+}
+
+/* System preference fallback (no class set yet on first paint) */
+@media (prefers-color-scheme: light) {
+  :root:not(.dark) {
+    --bg:           #F2EDE3;
+    --bg-panel:     #EDE7D9;
+    --bg-panel-alt: #E6DFCF;
+    --border:       #C9BFA8;
+    --amber:        #B8750A;
+    --amber-bright: #D4890C;
+    --amber-dim:    rgba(184, 117, 10, 0.10);
+    --amber-mid:    rgba(184, 117, 10, 0.20);
+    --green:        #007A52;
+    --green-dim:    rgba(0, 122, 82, 0.12);
+    --red:          #C4293E;
+    --red-dim:      rgba(196, 41, 62, 0.10);
+    --blue:         #1A6FD4;
+    --text-primary: #1A1F2E;
+    --text-dim:     #4A5568;
+    --text-muted:   #8A9BB8;
+    --scanline:     rgba(0, 0, 0, 0.025);
+    --dot-color:    #9CA8BE;
+    --glow-color:   rgba(184, 117, 10, 0.05);
+  }
+}
+
+/* ============================================================
+   RESET & BASE
+============================================================ */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  min-height: 100vh;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 14px;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================================
+   DOT-GRID + AMBIENT GLOW
+============================================================ */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: radial-gradient(circle, var(--dot-color) 1px, transparent 1px);
+  background-size: 28px 28px;
+  opacity: 0.35;
+  pointer-events: none;
+  z-index: 0;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  top: -120px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 800px;
+  height: 260px;
+  background: radial-gradient(ellipse, var(--glow-color) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ============================================================
+   SCROLLBAR
+============================================================ */
+::-webkit-scrollbar         { width: 4px; height: 4px; }
+::-webkit-scrollbar-track   { background: var(--bg-panel); }
+::-webkit-scrollbar-thumb   { background: var(--border); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ============================================================
+   KEYFRAMES
+============================================================ */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+@keyframes panel-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes num-flash {
+  0%   { color: var(--amber-bright); text-shadow: 0 0 16px rgba(255, 201, 64, 0.6); }
+  100% { color: var(--amber); text-shadow: 0 0 40px rgba(255, 179, 0, 0.3); }
+}
+
+@keyframes radar-rotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes blip-fade {
+  0%, 100% { opacity: 0.3; }
+  50%       { opacity: 1; }
+}
+
+@keyframes fade-in-down {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================================
+   RESPONSIVE — DASHBOARD GRID
+============================================================ */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 360px 1fr 240px;
+  gap: 12px;
+  margin-top: 14px;
+  flex: 1;
+}
+
+@media (max-width: 1200px) {
+  .dashboard-grid {
+    grid-template-columns: 320px 1fr 220px;
+  }
+}
+
+@media (max-width: 960px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  /* Re-stack on 2-col */
+  .panel-portfolio  { grid-column: 1; grid-row: 1; }
+  .panel-positions  { grid-column: 2; grid-row: 1; }
+  .panel-controls   { grid-column: 1; grid-row: 2; }
+  .panel-risk       { grid-column: 2; grid-row: 2; }
+  .panel-trades     { grid-column: 1 / 3; grid-row: 3; }
+  .panel-gate-log   { grid-column: 1 / 3; grid-row: 4; }
+}
+
+@media (max-width: 600px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .panel-portfolio,
+  .panel-positions,
+  .panel-controls,
+  .panel-risk,
+  .panel-trades,
+  .panel-gate-log {
+    grid-column: 1 !important;
+    grid-row: auto !important;
+  }
+
+  /* Horizontal-scroll tables on small screens */
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}
+
+/* Header collapses regime scores on narrow viewports */
+@media (max-width: 760px) {
+  .header-regime-scores { display: none; }
+  .header-regime-label  { display: none; }
+}

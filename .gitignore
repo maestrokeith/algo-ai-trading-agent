@@ -1,0 +1,86 @@
+# Secrets and local env (never push)
+.env
+.env.*
+.env.local
+.env.*.local
+*.pem
+
+# Local state and logs
+data/
+logs/
+*.log
+
+# Python
+__pycache__/
+*.pyc
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+.eggs/
+*.egg-info/
+*.egg
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+**/.DS_Store
+Thumbs.db
+
+# pytest
+.pytest_cache/
+
+# Optional: uncomment if you keep a local config with secrets
+# config/local.yaml
+config/users.local.yaml
+
+# Test coverage
+.coverage
+.coverage.*
+htmlcov/
+
+# Generated HTML
+dashboard.html
+reports/
+
+# Frontend build artifacts and dependencies
+frontend/dist/
+frontend/node_modules/
+
+__pycache__/
+*.pyc
+data/locks/
+data/locks/
+# Python cache
+__pycache__/
+*.pyc
+
+# Runtime data
+data/
+reports/
+logs/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Runtime state
+data/locks/
+data/*.json
+
+# accidental temp files
+=
+
+__pycache__/
+*.py[cod]
+
+opengov-ai/
+reviews/
+
+opengov-ai/
+reviews/

@@ -1,0 +1,13 @@
+[Unit]
+Description=AlgoSphere post-market combined daily summary
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/algosphere/algo-ai-trading-agent
+Environment=PYTHONPATH=/opt/algosphere/algo-ai-trading-agent
+ExecStart=/usr/bin/python3 /opt/algosphere/algo-ai-trading-agent/scripts/run_ops_workflow.py daily-summary --user live_bot
+User=algosphere
+Group=algosphere
+
+# Read-only analytics: summarizes local artifacts into reports/daily.
+NoNewPrivileges=true

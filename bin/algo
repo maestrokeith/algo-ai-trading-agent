@@ -1,0 +1,408 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
+if [[ -n "${PYTHON:-}" ]]; then
+  PY="$PYTHON"
+elif [[ -x "$ROOT/.venv/bin/python" ]]; then
+  PY="$ROOT/.venv/bin/python"
+else
+  PY="python3"
+fi
+
+cmd="${1:-help}"
+if [[ $# -gt 0 ]]; then shift; fi
+
+case "$cmd" in
+  loop|paper)
+    exec "$PY" scripts/run_alpaca_loop.py --paper "$@"
+    ;;
+  loop-live|live)
+    exec "$PY" scripts/run_alpaca_loop.py --live "$@"
+    ;;
+  loop-v)
+    exec "$PY" scripts/run_alpaca_loop.py --paper --verbose "$@"
+    ;;
+  once)
+    exec "$PY" scripts/run_alpaca.py "$@"
+    ;;
+  example)
+    exec "$PY" scripts/run_example.py "$@"
+    ;;
+  backtest)
+    exec "$PY" scripts/run_backtest.py "$@"
+    ;;
+  equity)
+    exec "$PY" scripts/check_equity.py "$@"
+    ;;
+  prices)
+    exec "$PY" scripts/check_prices.py "$@"
+    ;;
+  positions)
+    exec "$PY" scripts/check_positions.py "$@"
+    ;;
+  charts)
+    exec "$PY" scripts/show_position_charts.py "$@"
+    ;;
+  sells|strategy)
+    exec "$PY" scripts/show_sell_strategy.py "$@"
+    ;;
+  summary|daily)
+    exec "$PY" scripts/show_daily_summary.py "$@"
+    ;;
+  premarket-ready)
+    exec "$PY" scripts/check_premarket_readiness.py "$@"
+    ;;
+  premarket-runtime-verify)
+    exec "$PY" scripts/check_premarket_runtime_verify.py "$@"
+    ;;
+  premarket-refresh)
+    exec "$PY" scripts/run_premarket_collection.py "$@"
+    ;;
+  news-diagnostics)
+    exec "$PY" scripts/news_diagnostics.py "$@"
+    ;;
+  social-sentiment)
+    exec "$PY" scripts/social_sentiment.py "$@"
+    ;;
+  ops)
+    exec "$PY" scripts/run_ops_workflow.py "$@"
+    ;;
+  self-heal)
+    exec "$PY" scripts/run_self_heal.py "$@"
+    ;;
+  autoops)
+    exec "$PY" scripts/run_autoops.py "$@"
+    ;;
+  research-feedback)
+    exec "$PY" scripts/generate_research_feedback.py "$@"
+    ;;
+  catalyst-outcomes)
+    exec "$PY" scripts/generate_catalyst_outcomes.py "$@"
+    ;;
+  capture-metrics)
+    exec "$PY" scripts/capture_research_metrics.py "$@"
+    ;;
+  end-day)
+    exec "$PY" scripts/run_end_day_review.py "$@"
+    ;;
+  intraday-health)
+    exec "$PY" scripts/intraday_health_agent.py "$@"
+    ;;
+  boot-health)
+    exec "$PY" -m src.boot_health "$@"
+    ;;
+  broker-status)
+    exec "$PY" scripts/broker_diagnostics.py status "$@"
+    ;;
+  broker-capabilities)
+    exec "$PY" scripts/broker_diagnostics.py capabilities "$@"
+    ;;
+  broker-positions)
+    exec "$PY" scripts/broker_diagnostics.py positions "$@"
+    ;;
+  broker-orders)
+    exec "$PY" scripts/broker_diagnostics.py orders "$@"
+    ;;
+  trading-audit)
+    exec "$PY" -c 'from src.trading_diagnostics import trading_audit_main; raise SystemExit(trading_audit_main())' "$@"
+    ;;
+  duplicate-forensics)
+    exec "$PY" -c 'from src.trading_diagnostics import duplicate_forensics_main; raise SystemExit(duplicate_forensics_main())' "$@"
+    ;;
+  day-review)
+    exec "$PY" -c 'from src.trading_diagnostics import day_review_main; raise SystemExit(day_review_main())' "$@"
+    ;;
+  profitability-report)
+    exec "$PY" -c 'from src.trading_diagnostics import profitability_main; raise SystemExit(profitability_main())' "$@"
+    ;;
+  news-edge-report)
+    exec "$PY" -c 'from src.trading_diagnostics import news_edge_main; raise SystemExit(news_edge_main())' "$@"
+    ;;
+  strategy-readiness)
+    exec "$PY" -c 'from src.trading_diagnostics import strategy_readiness_main; raise SystemExit(strategy_readiness_main())' "$@"
+    ;;
+  artifact-writability-check)
+    exec "$PY" scripts/artifact_writability_check.py "$@"
+    ;;
+  shadow-readiness)
+    exec "$PY" scripts/shadow_readiness.py "$@"
+    ;;
+  limited-live-readiness)
+    exec "$PY" scripts/limited_live_readiness.py "$@"
+    ;;
+  reconcile-live-order)
+    exec "$PY" -c 'from src.trading_diagnostics import reconcile_live_order_main; raise SystemExit(reconcile_live_order_main())' "$@"
+    ;;
+  position-management-status)
+    exec "$PY" -c 'from src.pilot_exit_management import position_management_status_main; raise SystemExit(position_management_status_main())' "$@"
+    ;;
+  experiment)
+    exec "$PY" -c 'from src.trading_diagnostics import experiment_main; raise SystemExit(experiment_main())' "$@"
+    ;;
+  analyze-logs)
+    exec "$PY" scripts/analyze_algo_logs.py "$@"
+    ;;
+  analyze-fix)
+    exec "$PY" scripts/analyze_algo_logs.py fix "$@"
+    ;;
+  options-pilot-status)
+    exec "$PY" scripts/run_options_pilot_status.py "$@"
+    ;;
+  options-readiness)
+    exec "$PY" scripts/run_options_readiness.py "$@"
+    ;;
+  options-daily-limit-usage)
+    exec "$PY" scripts/run_options_daily_limit_usage.py "$@"
+    ;;
+  dynamic-rejection-report)
+    exec "$PY" scripts/generate_dynamic_rejection_report.py "$@"
+    ;;
+  unstable-quote-report)
+    exec "$PY" scripts/generate_unstable_quote_report.py "$@"
+    ;;
+  dynamic-gate-research)
+    exec "$PY" scripts/generate_dynamic_gate_research.py "$@"
+    ;;
+  dynamic-rvol-sensitivity)
+    exec "$PY" scripts/generate_dynamic_rvol_sensitivity.py "$@"
+    ;;
+  dynamic-rvol-forward-returns)
+    exec "$PY" scripts/generate_dynamic_rvol_forward_returns.py "$@"
+    ;;
+  dynamic-conversion-report)
+    exec "$PY" scripts/generate_dynamic_conversion_report.py "$@"
+    ;;
+  dynamic-entry-gap-report)
+    exec "$PY" scripts/generate_dynamic_entry_gap_report.py "$@"
+    ;;
+  dynamic-entry-alignment-report)
+    exec "$PY" scripts/generate_dynamic_entry_alignment_report.py "$@"
+    ;;
+  dynamic-entry-rejection-report)
+    exec "$PY" scripts/generate_dynamic_entry_rejection_report.py "$@"
+    ;;
+  dynamic-entry-adaptive-report)
+    exec "$PY" scripts/generate_dynamic_entry_adaptive_report.py "$@"
+    ;;
+  aggressive-dynamic-report)
+    exec "$PY" scripts/generate_aggressive_dynamic_report.py "$@"
+    ;;
+  dynamic-allocator-sizing-report)
+    exec "$PY" scripts/generate_dynamic_allocator_sizing_report.py "$@"
+    ;;
+  dynamic-weak-catalyst-report)
+    exec "$PY" scripts/generate_dynamic_weak_catalyst_report.py "$@"
+    ;;
+  dynamic-weak-catalyst-outcomes)
+    exec "$PY" scripts/generate_dynamic_weak_catalyst_outcomes.py "$@"
+    ;;
+  dynamic-dispatch-explainability-report)
+    exec "$PY" scripts/generate_dynamic_dispatch_explainability_report.py "$@"
+    ;;
+  dynamic-funnel-report)
+    exec "$PY" scripts/generate_dynamic_funnel_report.py "$@"
+    ;;
+  dynamic-quote-quality-report)
+    exec "$PY" scripts/generate_dynamic_quote_quality_report.py "$@"
+    ;;
+  dynamic-bad-quote-suppression-research)
+    exec "$PY" scripts/generate_dynamic_bad_quote_suppression_research.py "$@"
+    ;;
+  signal-expectancy-report)
+    exec "$PY" scripts/generate_signal_expectancy_report.py "$@"
+    ;;
+  backfill-forward-bars)
+    exec "$PY" scripts/backfill_forward_bars.py "$@"
+    ;;
+  dynamic-spread-tier-research)
+    exec "$PY" scripts/generate_dynamic_spread_tier_research.py "$@"
+    ;;
+  dynamic-scanner-quality-report)
+    exec "$PY" scripts/generate_dynamic_scanner_quality_report.py "$@"
+    ;;
+  growth-diagnostic-report)
+    exec "$PY" scripts/generate_growth_diagnostic_report.py "$@"
+    ;;
+  dynamic-threshold-miss-research)
+    exec "$PY" scripts/generate_dynamic_threshold_miss.py "$@"
+    ;;
+  dynamic-candidate-blockers)
+    exec "$PY" scripts/generate_dynamic_candidate_blockers.py "$@"
+    ;;
+  dynamic-history-gate-research)
+    exec "$PY" scripts/generate_dynamic_history_gate_research.py "$@"
+    ;;
+  opening-churn-research)
+    exec "$PY" scripts/generate_opening_churn_research.py "$@"
+    ;;
+  opening-churn-report)
+    exec "$PY" scripts/generate_opening_churn_research.py "$@"
+    ;;
+  allocator-threshold-research)
+    exec "$PY" scripts/generate_allocator_threshold_research.py "$@"
+    ;;
+  allocator-suppression-report)
+    exec "$PY" scripts/generate_allocator_suppression_report.py "$@"
+    ;;
+  allocator-dispatch-mismatch-report)
+    exec "$PY" scripts/generate_allocator_dispatch_mismatch_report.py "$@"
+    ;;
+  trend-prefilter-research)
+    exec "$PY" scripts/generate_trend_prefilter_research.py "$@"
+    ;;
+  trend-long-loss-review)
+    exec "$PY" scripts/generate_trend_long_loss_review.py "$@"
+    ;;
+  strategy-quality-report)
+    exec "$PY" scripts/generate_strategy_quality_report.py "$@"
+    ;;
+  research-bars-status)
+    exec "$PY" scripts/research_bars_status.py "$@"
+    ;;
+  research-bars-consistency)
+    exec "$PY" scripts/research_bars_consistency.py "$@"
+    ;;
+  research-bars-backfill)
+    exec "$PY" scripts/research_bars_backfill.py "$@"
+    ;;
+  june-session-diagnostics)
+    exec "$PY" scripts/generate_june_session_diagnostics.py "$@"
+    ;;
+  diagnostics)
+    exec "$PY" scripts/run_diagnostics.py "$@"
+    ;;
+  startup-diagnostics)
+    exec "$PY" scripts/startup_diagnostics.py "$@"
+    ;;
+  paper-options-diagnostics)
+    exec "$PY" scripts/run_paper_options_diagnostics.py "$@"
+    ;;
+  paper-session-conversion)
+    exec "$PY" scripts/generate_paper_session_conversion_report.py "$@"
+    ;;
+  install-ops-timers)
+    exec bash scripts/install_ops_timers.sh "$@"
+    ;;
+  install-node)
+    exec bash scripts/install_node.sh "$@"
+    ;;
+  reset)
+    exec "$PY" scripts/reset_paper.py "$@"
+    ;;
+  download-data)
+    exec "$PY" scripts/download_backtest_data.py "$@"
+    ;;
+  scheduled)
+    exec "$PY" scripts/run_scheduled_alpaca.py "$@"
+    ;;
+  help|--help|-h)
+    cat <<'EOF'
+AlgoSphere — algorithmic trading (see assets/algosphere-logo.svg)
+
+Usage: ./bin/algo <command> [args passed through to the script]
+
+  loop         run_alpaca_loop.py --paper
+  loop-live    run_alpaca_loop.py --live
+  loop-v       loop + --verbose
+  once         run_alpaca.py
+  example      run_example.py
+  backtest     run_backtest.py
+  equity       check_equity.py
+  prices       check_prices.py
+  positions    check_positions.py
+  charts       show_position_charts.py
+  sells        show_sell_strategy.py
+  summary      show_daily_summary.py [YYYY-MM-DD|latest] [--user USER]
+  premarket-ready   check_premarket_readiness.py
+  premarket-runtime-verify   verify live premarket runtime catalyst readiness [--live] [--verbose]
+  premarket-refresh   run 5:15 premarket news collection refresh
+  news-diagnostics   news_diagnostics.py --provider alpaca|newsapi|sec --symbol SYMBOL
+  social-sentiment   social_sentiment.py --symbols AAPL,NVDA,PLTR [--hours 24]
+  ops          run_ops_workflow.py <job>
+  self-heal    run_self_heal.py --live|--paper [--dry-run]
+  autoops      AutoOps subsystem: status [--live|--paper] | drill --dry-run | report | verify --live|--paper | deploy-latest --live | end-day-analysis --live
+  research-feedback   generate_research_feedback.py [YYYY-MM-DD|latest] [--date DATE] [--user USER]
+  catalyst-outcomes   generate_catalyst_outcomes.py --date YYYY-MM-DD|latest [--user USER]
+  capture-metrics   capture_research_metrics.py --begin-day|--end-day --live|--paper [--dry-run]
+  end-day      consolidated read-only end-of-day review --live|--paper
+  intraday-health   read-only intraday health snapshot --live|--paper --since "30 min ago" --json
+  boot-health   post-reboot readiness validation [--json] [--quiet] [--repair]
+  broker-status   read-only broker status [--broker alpaca] [--json]
+  broker-capabilities   read-only broker capabilities [--broker alpaca] [--json]
+  broker-positions   read-only broker positions [--broker alpaca] [--json]
+  broker-orders   read-only broker orders [--broker alpaca] [--date YYYY-MM-DD] [--json]
+  trading-audit   reconcile persisted trading funnel --date YYYY-MM-DD --user USER [--json]
+  duplicate-forensics   inspect duplicate lifecycle rows --date YYYY-MM-DD --user USER [--json]
+  day-review   canonical daily trading review --date YYYY-MM-DD|latest --user USER [--json]
+  profitability-report   expectancy diagnostics --from YYYY-MM-DD --to YYYY-MM-DD --user USER [--json]
+  news-edge-report   news incremental edge diagnostics --from YYYY-MM-DD --to YYYY-MM-DD [--json]
+  strategy-readiness   show route production readiness [--user USER] [--json]
+  artifact-writability-check   verify diagnostic artifact directories --date YYYY-MM-DD --user USER
+  shadow-readiness   verify guarded shadow mode readiness [--user USER] [--date YYYY-MM-DD] [--json]
+  limited-live-readiness   verify bounded live equity pilot readiness --date YYYY-MM-DD --user USER [--json]
+  reconcile-live-order   reconcile one live broker order --date YYYY-MM-DD --user USER --order-id ID [--symbol SYMBOL] [--json]
+  position-management-status   read-only bounded pilot position-management status --live --date YYYY-MM-DD --user USER [--json]
+  experiment   bounded experiment controls: list | report EXPERIMENT_ID
+  analyze-logs   read-only recurring log analyzer --live|--paper [--dry-run] [--timer]
+  analyze-fix    verify a log-analyzer issue --issue N --live|--paper
+  options-pilot-status   read-only options pilot status --live|--paper
+  options-readiness      read-only options readiness --live|--paper [--user USER]
+  options-daily-limit-usage   explain options daily entry-limit usage --live|--paper [--user USER] [--date YYYY-MM-DD]
+  dynamic-rejection-report   generate_dynamic_rejection_report.py --date YYYY-MM-DD|latest [--user USER]
+  unstable-quote-report   first-30m unstable quote rejection report --date YYYY-MM-DD|latest [--user USER]
+  dynamic-gate-research   generate_dynamic_gate_research.py --date YYYY-MM-DD|latest [--user USER]
+  dynamic-rvol-sensitivity   generate_dynamic_rvol_sensitivity.py --date YYYY-MM-DD|latest [--user USER]
+  dynamic-rvol-forward-returns   generate_dynamic_rvol_forward_returns.py --date YYYY-MM-DD|latest [--user USER]
+  dynamic-conversion-report   generate_dynamic_conversion_report.py --date YYYY-MM-DD|latest [--user USER]
+  dynamic-entry-gap-report   generate_dynamic_entry_gap_report.py --date YYYY-MM-DD|latest [--user USER]
+  dynamic-entry-alignment-report   entry_alignment explainability report --date YYYY-MM-DD --user USER
+  dynamic-entry-adaptive-report   adaptive sensitivity report --date YYYY-MM-DD --user USER
+  aggressive-dynamic-report   aggressive dynamic normal-vs-aggressive comparison --date YYYY-MM-DD --user USER
+  dynamic-allocator-sizing-report   dynamic allocator sizing report --date YYYY-MM-DD|latest [--user USER]
+  dynamic-weak-catalyst-report   weak catalyst dynamic review --date YYYY-MM-DD --user USER
+  dynamic-dispatch-explainability-report   dispatcher explainability for allocator actions --date YYYY-MM-DD --user USER
+  dynamic-funnel-report   full dynamic scanner→entry→allocator→execution funnel report --date YYYY-MM-DD --user USER
+  dynamic-quote-quality-report   classify unstable_quote root causes --date YYYY-MM-DD --user USER
+  dynamic-bad-quote-suppression-research   repeated bad_quote/unstable_quote suppression research --date YYYY-MM-DD --user USER
+  signal-expectancy-report   signal/route/symbol expectancy analytics --date YYYY-MM-DD --user USER
+  backfill-forward-bars   backfill local 1Min bars for forward outcomes --date YYYY-MM-DD --user USER [--symbols AAPL,MSFT]
+  dynamic-spread-tier-research   spread_too_wide tier research --date YYYY-MM-DD --user USER
+  dynamic-scanner-quality-report   scanner-only quality report --date YYYY-MM-DD --user USER
+  growth-diagnostic-report   account growth funnel and expectancy report --date latest --lookback-days 10 --user live_bot
+  dynamic-threshold-miss-research   generate_dynamic_threshold_miss.py --date YYYY-MM-DD [--user USER]
+  dynamic-candidate-blockers   selected dynamic candidate blocker report --date YYYY-MM-DD [--user USER]
+  dynamic-history-gate-research   history-bar gate report --date YYYY-MM-DD [--user USER]
+  opening-churn-research   generate_opening_churn_research.py --date YYYY-MM-DD|latest [--user USER]
+  opening-churn-report   opening churn report alias --date YYYY-MM-DD [--user USER]
+  allocator-threshold-research   generate_allocator_threshold_research.py --date YYYY-MM-DD|latest [--user USER]
+  allocator-suppression-report   allocator suppression report --date YYYY-MM-DD [--user USER]
+  allocator-dispatch-mismatch-report   allocator vs dispatch mismatch report --date YYYY-MM-DD|latest [--user USER]
+  trend-prefilter-research   generate_trend_prefilter_research.py --date YYYY-MM-DD [--user USER]
+  trend-long-loss-review   read-only trend_long loss review --date YYYY-MM-DD --user USER
+  research-bars-status   report local bar availability --date YYYY-MM-DD --user USER [--symbols AAPL,MSFT]
+  research-bars-consistency   compare bar status and expectancy availability --date YYYY-MM-DD --user USER [--symbols AAPL,MSFT]
+  research-bars-backfill   backfill local 1Min bars --date YYYY-MM-DD --user USER --symbols AAPL,MSFT
+  june-session-diagnostics   selected/final candidate downstream diagnostic report
+  diagnostics   run_diagnostics.py [--user USER]
+  startup-diagnostics   explain systemd timer/service startup timing
+  paper-options-diagnostics   safe mock-only paper options entry/options pipeline diagnostic
+  paper-session-conversion   paper replay conversion report from scan to simulated submit
+  install-ops-timers   install and enable daily ops systemd timers
+  install-node   validate and install a production node
+  reset        reset_paper.py
+  download-data   download_backtest_data.py
+  scheduled    run_scheduled_alpaca.py
+
+Or from repo root:  make loop-paper   |   make help
+
+Override Python:    PYTHON=python3.12 ./bin/algo loop
+EOF
+    ;;
+  *)
+    echo "Unknown command: $cmd" >&2
+    "$0" help
+    exit 1
+    ;;
+esac

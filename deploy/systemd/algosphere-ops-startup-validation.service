@@ -1,0 +1,14 @@
+[Unit]
+Description=AlgoSphere market-open startup artifact validation
+After=algo.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/algosphere/algo-ai-trading-agent
+Environment=PYTHONPATH=/opt/algosphere/algo-ai-trading-agent
+ExecStart=/usr/bin/python3 /opt/algosphere/algo-ai-trading-agent/scripts/run_ops_workflow.py startup-validation --user live_bot --journal-unit algo.service
+User=algosphere
+Group=algosphere
+
+# Read-only validation: scans local logs for PREMARKET_STARTUP_ARTIFACTS.
+NoNewPrivileges=true

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AlgoSphere recurring log analyzer every 5 minutes
+
+[Timer]
+OnCalendar=*:0/5
+Persistent=true
+Unit=algo-log-analyzer.service
+
+[Install]
+WantedBy=timers.target

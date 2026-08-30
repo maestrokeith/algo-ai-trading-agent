@@ -1,0 +1,7 @@
+[Unit]
+Description=AlgoSphere live end-day analysis
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/algosphere/algo-ai-trading-agent
+ExecStart=/opt/algosphere/algo-ai-trading-agent/bin/algo autoops end-day-analysis --live

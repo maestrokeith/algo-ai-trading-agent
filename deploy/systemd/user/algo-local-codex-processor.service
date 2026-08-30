@@ -1,0 +1,8 @@
+[Unit]
+Description=Algo local Codex issue processor
+Documentation=%h/algo/docs/OPERATIONS.md
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/algosphere/algo-ai-trading-agent
+ExecStart=/opt/algosphere/algo-ai-trading-agent/scripts/process_codex_issues_local.sh --limit 1

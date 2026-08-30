@@ -1,0 +1,13 @@
+[Unit]
+Description=AlgoSphere optional post-close market replay summary
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/algosphere/algo-ai-trading-agent
+Environment=PYTHONPATH=/opt/algosphere/algo-ai-trading-agent
+ExecStart=/usr/bin/python3 /opt/algosphere/algo-ai-trading-agent/scripts/run_ops_workflow.py replay-summary --user live_bot
+User=algosphere
+Group=algosphere
+
+# Replay uses broker mock mode and local historical artifacts only.
+NoNewPrivileges=true

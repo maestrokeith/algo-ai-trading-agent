@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AlgoSphere live end-day analysis after market close
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 16:15:00 America/New_York
+Persistent=true
+Unit=algosphere-live-endday-analysis.service
+
+[Install]
+WantedBy=timers.target
