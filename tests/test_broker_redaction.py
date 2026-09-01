@@ -6,7 +6,11 @@ from src.brokers.redaction import redact, redact_text
 
 
 def test_recursive_redaction_masks_account_and_tokens() -> None:
-    raw = {"account_number": "fake-agentic-2887", "nested": [{"rhs_account_number": "fake-agentic-2887", "access_token": "secret-token"}], "symbol": "AAPL"}
+    raw = {
+        "account_number": "fake-agentic-2887",
+        "nested": [{"broker_account_number": "fake-agentic-2887", "access_token": "secret-token"}],
+        "symbol": "AAPL",
+    }
     clean = redact(raw)
     rendered = json.dumps(clean)
     assert "fake-agentic-2887" not in rendered

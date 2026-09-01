@@ -144,6 +144,7 @@ export function Header() {
       <nav style={{ display: 'flex', gap: 2, marginRight: 18 }}>
         {[
           { to: '/dashboard', label: 'DASHBOARD' },
+          { to: '/agents',    label: 'AGENTS' },
           { to: '/trades',    label: 'TRADES' },
           { to: '/settings',  label: 'SETTINGS' },
         ].map(({ to, label }) => (

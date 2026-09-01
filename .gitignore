@@ -1,6 +1,7 @@
 # Secrets and local env (never push)
 .env
 .env.*
+!.env.example
 .env.local
 .env.*.local
 *.pem

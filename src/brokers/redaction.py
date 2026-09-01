@@ -9,8 +9,8 @@ from typing import Any
 SENSITIVE_KEYS = {
     "account_id",
     "account_number",
-    "rhs_account_number",
-    "rhc_account_number",
+    "broker_account_id",
+    "broker_account_number",
     "authorization",
     "access_token",
     "refresh_token",

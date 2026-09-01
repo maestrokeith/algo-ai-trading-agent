@@ -5,6 +5,7 @@ import { ThemeProvider } from '@/components/layout/ThemeProvider'
 import { AppShell }   from '@/components/layout/AppShell'
 import { AuthGuard }  from '@/components/layout/AuthGuard'
 import { Dashboard }  from '@/pages/Dashboard'
+import { AgentDashboard } from '@/pages/AgentDashboard'
 import { Trades }     from '@/pages/Trades'
 import { Settings }   from '@/pages/Settings'
 import { Login }      from '@/pages/Login'
@@ -27,6 +28,7 @@ export default function App() {
             <Route element={<AppShell />}>
               <Route index             element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/agents"    element={<AgentDashboard />} />
               <Route path="/trades"    element={<Trades />} />
               <Route path="/settings"  element={<Settings />} />
             </Route>

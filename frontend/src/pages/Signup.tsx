@@ -1,19 +1,41 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { getMe, signup } from '@/lib/api'
+import { useAuthStore } from '@/store/authStore'
+import { useSessionStore } from '@/store/sessionStore'
 
 export function Signup() {
   const navigate = useNavigate()
+  const setAuth = useAuthStore((s) => s.setAuth)
+  const setViewingUserId = useSessionStore((s) => s.setViewingUserId)
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm]   = useState('')
   const [error, setError]       = useState('')
+  const [loading, setLoading]   = useState(false)
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!email || !password || !confirm) { setError('All fields are required.'); return }
     if (password !== confirm) { setError('Passwords do not match.'); return }
     if (password.length < 8) { setError('Password must be at least 8 characters.'); return }
-    navigate('/onboarding')
+    setLoading(true)
+    setError('')
+    try {
+      const { access_token } = await signup(email, password, true)
+      setAuth(access_token, '', email, 'trader', true)
+      const profile = await getMe()
+      setAuth(access_token, profile.id, profile.email, profile.role, profile.paper)
+      setViewingUserId(profile.id)
+      navigate('/onboarding')
+    } catch (err: unknown) {
+      const status = typeof err === 'object' && err !== null && 'response' in err
+        ? (err.response as { status?: number }).status
+        : undefined
+      setError(status === 409 ? 'An account with this email already exists.' : 'Could not create account. Check the API server and try again.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -42,12 +64,14 @@ export function Signup() {
               </div>
             )}
 
-            <button type="submit" style={submitBtn}>CREATE ACCOUNT</button>
+            <button type="submit" disabled={loading} style={{ ...submitBtn, opacity: loading ? 0.6 : 1 }}>
+              {loading ? 'CREATING...' : 'CREATE ACCOUNT'}
+            </button>
           </form>
 
           <div style={{ marginTop: 20, textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.08em' }}>
             Already have an account?{' '}
-            <Link to="/" style={{ color: 'var(--amber)', textDecoration: 'none' }}>SIGN IN</Link>
+            <Link to="/login" style={{ color: 'var(--amber)', textDecoration: 'none' }}>SIGN IN</Link>
           </div>
         </div>
       </div>

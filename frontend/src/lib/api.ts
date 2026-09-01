@@ -47,6 +47,11 @@ export async function login(email: string, password: string): Promise<TokenRespo
   return res.data
 }
 
+export async function signup(email: string, password: string, paper = true): Promise<TokenResponse> {
+  const res = await apiClient.post<TokenResponse>('/auth/signup', { email, password, paper })
+  return res.data
+}
+
 export async function getMe(): Promise<UserProfile> {
   const res = await apiClient.get<UserProfile>('/auth/me')
   return res.data
