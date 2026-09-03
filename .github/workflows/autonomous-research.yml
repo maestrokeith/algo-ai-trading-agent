@@ -1,0 +1,66 @@
+name: Autonomous Paper Research
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17,47 * * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: autonomous-paper-research
+  cancel-in-progress: true
+
+jobs:
+  research-cycle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install focused research dependencies
+        run: python -m pip install --upgrade pip pandas numpy fastapi pydantic
+
+      - name: Load previous cloud research history
+        run: |
+          git fetch origin research-state:refs/remotes/origin/research-state || true
+          git show origin/research-state:autonomy/latest.json > /tmp/previous.json || echo '{}' > /tmp/previous.json
+
+      - name: Generate autonomous paper research report
+        run: |
+          python scripts/autonomous_research_report.py \
+            --previous /tmp/previous.json \
+            --output /tmp/latest.json
+
+      - name: Verify paper-only report boundary
+        run: |
+          python - <<'PY'
+          import json
+          data = json.load(open('/tmp/latest.json'))
+          assert data['paper_only'] is True
+          assert data['live_execution'] is False
+          assert data['mode'] == 'paper_research'
+          assert data['data_source'] == 'deterministic_synthetic_research'
+          print('autonomous cloud report boundary verified')
+          PY
+
+      - name: Publish latest report to research-state branch
+        run: |
+          git checkout -B research-state origin/research-state
+          mkdir -p autonomy
+          cp /tmp/latest.json autonomy/latest.json
+          git config user.name 'algosphere-research-bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add autonomy/latest.json
+          if git diff --cached --quiet; then
+            echo 'No report changes to publish'
+          else
+            git commit -m 'Update autonomous paper research state'
+            git push origin research-state
+          fi
