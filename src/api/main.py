@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routers import admin, auth, users
+from src.api.routers import admin, auth, research, users
 from src.db import Base, engine
 
 # Create tables on startup if they don't exist (dev convenience; use Alembic in prod)
@@ -23,8 +23,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(
     title="AlgoSphere API",
-    version="0.1.0",
-    description="Multi-user algorithmic trading dashboard API",
+    version="0.2.0",
+    description="Paper-only quantitative research dashboard API plus account data services",
     lifespan=lifespan,
 )
 
@@ -44,8 +44,9 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(admin.router)
+app.include_router(research.router)
 
 
 @app.get("/healthz", tags=["meta"])
 async def healthz() -> dict:
-    return {"status": "ok"}
+    return {"status": "ok", "research_mode": "paper", "live_execution": False}
