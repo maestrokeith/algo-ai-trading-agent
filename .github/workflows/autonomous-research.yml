@@ -2,6 +2,12 @@ name: Autonomous Paper Research
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'scripts/autonomous_research_report.py'
+      - '.github/workflows/autonomous-research.yml'
   schedule:
     - cron: '17,47 * * * *'
 
