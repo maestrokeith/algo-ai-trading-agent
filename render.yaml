@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: algosphere-paper-engine
+    runtime: docker
+    region: frankfurt
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ALGOSPHERE_LOCAL_SQLITE
+        value: "1"
+      - key: CORS_ORIGINS
+        value: "https://algosphere-paper-engine.onrender.com"

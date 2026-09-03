@@ -1,13 +1,16 @@
 /**
  * Typed axios client for the AlgoSphere FastAPI backend.
- * Base URL is read from VITE_API_URL (defaults to http://localhost:8000).
- * JWT token is injected automatically from authStore on every request.
+ * In production the web UI and API are served from the same Render service,
+ * so requests use the current origin. Local development still defaults to
+ * http://localhost:8000 unless VITE_API_URL is explicitly supplied.
  */
 import axios from 'axios'
 import { useAuthStore } from '@/store/authStore'
 
+const defaultBaseUrl = import.meta.env.PROD ? '' : 'http://localhost:8000'
+
 export const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:8000',
+  baseURL: import.meta.env.VITE_API_URL ?? defaultBaseUrl,
 })
 
 apiClient.interceptors.request.use((config) => {

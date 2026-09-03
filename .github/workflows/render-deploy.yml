@@ -1,0 +1,67 @@
+name: Render Deployment Check
+
+on:
+  push:
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'render.yaml'
+      - 'frontend/**'
+      - 'engine/**'
+      - 'src/api/**'
+      - 'requirements.txt'
+      - '.github/workflows/render-deploy.yml'
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'render.yaml'
+      - 'frontend/**'
+      - 'engine/**'
+      - 'src/api/**'
+      - 'requirements.txt'
+      - '.github/workflows/render-deploy.yml'
+
+jobs:
+  docker-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production image
+        run: docker build -t algosphere-render-test .
+      - name: Start production image
+        run: |
+          docker run -d --rm --name algosphere-render-test \
+            -e PORT=10000 \
+            -e JWT_SECRET=test-only-ci-secret \
+            -e ALGOSPHERE_LOCAL_SQLITE=1 \
+            -p 10000:10000 \
+            algosphere-render-test
+      - name: Wait for health endpoint
+        run: |
+          for i in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:10000/healthz > health.json; then
+              cat health.json
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs algosphere-render-test
+          exit 1
+      - name: Verify paper-only boundary
+        run: |
+          python - <<'PY'
+          import json
+          data = json.load(open('health.json'))
+          assert data['status'] == 'ok'
+          assert data['research_mode'] == 'paper'
+          assert data['live_execution'] is False
+          assert data['web_ui'] is True
+          print('Render production image is healthy and paper-only')
+          PY
+      - name: Verify web app
+        run: |
+          curl --fail --silent http://127.0.0.1:10000/engine | grep -q '<div id="root"></div>'
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs algosphere-render-test || true

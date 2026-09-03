@@ -2,17 +2,22 @@
 from __future__ import annotations
 
 import os
-from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from src.api.routers import admin, auth, research, users
 from src.db import Base, engine
 
-# Create tables on startup if they don't exist (dev convenience; use Alembic in prod)
 Base.metadata.create_all(engine)
+
+ROOT_DIR = Path(__file__).resolve().parents[2]
+WEB_DIST = ROOT_DIR / "frontend" / "dist"
 
 
 @asynccontextmanager
@@ -23,7 +28,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(
     title="AlgoSphere API",
-    version="0.2.0",
+    version="0.3.0",
     description="Paper-only quantitative research dashboard API plus account data services",
     lifespan=lifespan,
 )
@@ -49,4 +54,31 @@ app.include_router(research.router)
 
 @app.get("/healthz", tags=["meta"])
 async def healthz() -> dict:
-    return {"status": "ok", "research_mode": "paper", "live_execution": False}
+    return {
+        "status": "ok",
+        "research_mode": "paper",
+        "live_execution": False,
+        "web_ui": WEB_DIST.exists(),
+    }
+
+
+if (WEB_DIST / "assets").is_dir():
+    app.mount("/assets", StaticFiles(directory=WEB_DIST / "assets"), name="assets")
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def serve_web_app(full_path: str):
+    """Serve the Vite production build and support React Router history paths."""
+    if full_path.startswith(("api/", "auth/")):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    if not WEB_DIST.is_dir():
+        raise HTTPException(status_code=503, detail="Web UI has not been built")
+
+    root = WEB_DIST.resolve()
+    candidate = (WEB_DIST / full_path).resolve() if full_path else root / "index.html"
+
+    if candidate.is_relative_to(root) and candidate.is_file():
+        return FileResponse(candidate)
+
+    return FileResponse(root / "index.html")
