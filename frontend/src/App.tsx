@@ -6,6 +6,7 @@ import { AppShell }   from '@/components/layout/AppShell'
 import { AuthGuard }  from '@/components/layout/AuthGuard'
 import { Dashboard }  from '@/pages/Dashboard'
 import { AgentDashboard } from '@/pages/AgentDashboard'
+import { Engine }     from '@/pages/Engine'
 import { Trades }     from '@/pages/Trades'
 import { Settings }   from '@/pages/Settings'
 import { Login }      from '@/pages/Login'
@@ -18,15 +19,14 @@ export default function App() {
       <ThemeProvider>
       <BrowserRouter>
         <Routes>
-          {/* Public auth routes */}
           <Route path="/login"      element={<Login />} />
           <Route path="/signup"     element={<Signup />} />
           <Route path="/onboarding" element={<Onboarding />} />
 
-          {/* Protected app routes */}
           <Route element={<AuthGuard />}>
             <Route element={<AppShell />}>
-              <Route index             element={<Navigate to="/dashboard" replace />} />
+              <Route index             element={<Navigate to="/engine" replace />} />
+              <Route path="/engine"    element={<Engine />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/agents"    element={<AgentDashboard />} />
               <Route path="/trades"    element={<Trades />} />
