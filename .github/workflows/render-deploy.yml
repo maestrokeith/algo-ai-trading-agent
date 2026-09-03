@@ -57,11 +57,25 @@ jobs:
           assert data['research_mode'] == 'paper'
           assert data['live_execution'] is False
           assert data['web_ui'] is True
+          assert data['command_center'] is True
           print('Render production image is healthy and paper-only')
           PY
-      - name: Verify web app
+      - name: Verify command and autonomy web routes
         run: |
+          curl --fail --silent http://127.0.0.1:10000/command | grep -q '<div id="root"></div>'
+          curl --fail --silent http://127.0.0.1:10000/autonomy | grep -q '<div id="root"></div>'
           curl --fail --silent http://127.0.0.1:10000/engine | grep -q '<div id="root"></div>'
+      - name: Verify command API safety status
+        run: |
+          curl --fail --silent http://127.0.0.1:10000/api/command/status > command-status.json
+          python - <<'PY'
+          import json
+          data = json.load(open('command-status.json'))
+          assert data['paper_only'] is True
+          assert data['live_execution'] is False
+          assert data['autonomy'] == 'bounded_research_only'
+          print('command API safety status verified')
+          PY
       - name: Show container logs on failure
         if: failure()
         run: docker logs algosphere-render-test || true
