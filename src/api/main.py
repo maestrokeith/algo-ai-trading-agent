@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from src.api.routers import admin, auth, research, users
+from src.api.routers import admin, auth, command, research, users
 from src.db import Base, engine
 
 Base.metadata.create_all(engine)
@@ -28,8 +28,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(
     title="AlgoSphere API",
-    version="0.3.0",
-    description="Paper-only quantitative research dashboard API plus account data services",
+    version="0.4.0",
+    description="Paper-only quantitative research command center and account data services",
     lifespan=lifespan,
 )
 
@@ -50,6 +50,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(admin.router)
 app.include_router(research.router)
+app.include_router(command.router)
 
 
 @app.get("/healthz", tags=["meta"])
@@ -58,6 +59,7 @@ async def healthz() -> dict:
         "status": "ok",
         "research_mode": "paper",
         "live_execution": False,
+        "command_center": True,
         "web_ui": WEB_DIST.exists(),
     }
 
