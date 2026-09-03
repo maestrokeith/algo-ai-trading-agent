@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from math import isfinite
-from typing import Any, Literal
+from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter
@@ -28,6 +28,25 @@ _BLOCKED_TERMS = {
     "broker order",
     "withdraw",
     "deposit",
+}
+
+_SYMBOL_ALIASES = {
+    "gold": "XAUUSD",
+    "xau": "XAUUSD",
+    "xauusd": "XAUUSD",
+    "silver": "XAGUSD",
+    "xag": "XAGUSD",
+    "xagusd": "XAGUSD",
+    "eurusd": "EURUSD",
+    "euro dollar": "EURUSD",
+    "gbpusd": "GBPUSD",
+    "pound dollar": "GBPUSD",
+    "usdjpy": "USDJPY",
+    "dollar yen": "USDJPY",
+    "audusd": "AUDUSD",
+    "aussie dollar": "AUDUSD",
+    "usdcad": "USDCAD",
+    "dollar cad": "USDCAD",
 }
 
 
@@ -95,6 +114,15 @@ def _blocked(command: str) -> bool:
     return any(term in text for term in _BLOCKED_TERMS)
 
 
+def _symbols_from_text(command: str) -> list[str]:
+    text = command.lower().replace("/", "")
+    found: list[str] = []
+    for alias, symbol in _SYMBOL_ALIASES.items():
+        if alias in text and symbol not in found:
+            found.append(symbol)
+    return found
+
+
 @router.get("/status")
 async def command_status() -> dict[str, Any]:
     return {
@@ -104,6 +132,7 @@ async def command_status() -> dict[str, Any]:
         "live_execution": LIVE_EXECUTION,
         "autonomy": "bounded_research_only",
         "capabilities": [
+            "natural-language instrument selection",
             "system status",
             "single-instrument demo backtest",
             "cross-instrument research scan",
@@ -118,6 +147,8 @@ async def command_status() -> dict[str, Any]:
 async def execute_command(request: CommandRequest) -> dict[str, Any]:
     mission_id = f"mission_{uuid4().hex[:12]}"
     text = request.command.strip().lower()
+    mentioned = _symbols_from_text(text)
+    target_symbol = mentioned[0] if mentioned else request.symbol
 
     if _blocked(text):
         return {
@@ -142,16 +173,17 @@ async def execute_command(request: CommandRequest) -> dict[str, Any]:
         }
 
     if any(token in text for token in ("scan", "compare", "rank")):
+        scan_symbols = mentioned or ["XAUUSD", "XAGUSD", "EURUSD", "GBPUSD"]
         cycle = await autonomous_cycle(
-            AutonomousCycleRequest(symbols=["XAUUSD", "XAGUSD", "EURUSD", "GBPUSD"], bars=request.bars, seed=request.seed)
+            AutonomousCycleRequest(symbols=scan_symbols, bars=request.bars, seed=request.seed)
         )
         return {
             "mission_id": mission_id,
             "intent": "cross_instrument_scan",
             "mode": "paper_research",
             "live_execution": False,
-            "summary": "Cross-instrument synthetic paper-research scan completed.",
-            "steps": ["Generate deterministic demo data", "Run paper backtests", "Score robustness", "Rank research outputs"],
+            "summary": f"Cross-instrument synthetic paper-research scan completed for {', '.join(scan_symbols)}.",
+            "steps": ["Parse requested instruments", "Generate deterministic demo data", "Run paper backtests", "Score robustness", "Rank research outputs"],
             "result": cycle,
         }
 
@@ -165,7 +197,7 @@ async def execute_command(request: CommandRequest) -> dict[str, Any]:
                     "stop_atr_multiple": stop_atr,
                     "reward_risk": rr,
                 })
-                result = _run_demo(request.symbol, request.bars, request.seed, cfg)
+                result = _run_demo(target_symbol, request.bars, request.seed, cfg)
                 candidates.append({
                     "stop_atr_multiple": stop_atr,
                     "reward_risk": rr,
@@ -178,19 +210,19 @@ async def execute_command(request: CommandRequest) -> dict[str, Any]:
             "intent": "bounded_parameter_sweep",
             "mode": "paper_research",
             "live_execution": False,
-            "summary": f"Completed a bounded 9-configuration paper sweep for {request.symbol}.",
-            "steps": ["Lock risk at 0.5%", "Sweep ATR stop", "Sweep reward/risk", "Rank by return/drawdown/expectancy score"],
-            "result": {"symbol": request.symbol, "candidates": candidates, "best": candidates[0]},
+            "summary": f"Completed a bounded 9-configuration paper sweep for {target_symbol}.",
+            "steps": ["Parse requested instrument", "Lock risk at 0.5%", "Sweep ATR stop", "Sweep reward/risk", "Rank by return/drawdown/expectancy score"],
+            "result": {"symbol": target_symbol, "candidates": candidates, "best": candidates[0]},
         }
 
-    payload = _run_demo(request.symbol, request.bars, request.seed)
+    payload = _run_demo(target_symbol, request.bars, request.seed)
     return {
         "mission_id": mission_id,
         "intent": "demo_backtest",
         "mode": "paper_research",
         "live_execution": False,
-        "summary": f"Completed deterministic paper research for {request.symbol}.",
-        "steps": ["Generate deterministic demo market", "Compute multi-timeframe signals", "Apply strict risk engine", "Simulate paper fills", "Run Monte Carlo and walk-forward diagnostics"],
+        "summary": f"Completed deterministic paper research for {target_symbol}.",
+        "steps": ["Parse requested instrument", "Generate deterministic demo market", "Compute multi-timeframe signals", "Apply strict risk engine", "Simulate paper fills", "Run Monte Carlo and walk-forward diagnostics"],
         "result": payload,
     }
 
