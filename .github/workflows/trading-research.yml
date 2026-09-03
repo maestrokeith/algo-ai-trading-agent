@@ -1,0 +1,53 @@
+name: Paper Trading Research
+
+on:
+  push:
+    paths:
+      - 'engine/**'
+      - 'tests/test_paper_scalper.py'
+      - 'tests/test_risk_engine.py'
+      - 'tests/test_signals.py'
+      - 'tests/test_portfolio.py'
+      - 'docs/trading/**'
+      - '.github/workflows/trading-research.yml'
+  pull_request:
+    paths:
+      - 'engine/**'
+      - 'tests/test_paper_scalper.py'
+      - 'tests/test_risk_engine.py'
+      - 'tests/test_signals.py'
+      - 'tests/test_portfolio.py'
+      - 'docs/trading/**'
+      - '.github/workflows/trading-research.yml'
+
+jobs:
+  paper-research:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install focused research dependencies
+        run: python -m pip install --upgrade pip pandas numpy pytest
+      - name: Compile research engine
+        run: python -m compileall engine
+      - name: Run focused paper-research tests
+        run: >-
+          pytest -q
+          tests/test_paper_scalper.py
+          tests/test_risk_engine.py
+          tests/test_signals.py
+          tests/test_portfolio.py
+      - name: Verify paper-only execution boundary
+        run: |
+          python - <<'PY'
+          from engine.trading_config import PAPER_ONLY, LIVE_EXECUTION
+          from engine.paper_scalper import PaperScalperBacktester
+          from engine.trading_research import TradingResearchAdapter
+          assert PAPER_ONLY is True
+          assert LIVE_EXECUTION is False
+          assert PaperScalperBacktester().can_execute_live() is False
+          assert TradingResearchAdapter().can_execute() is False
+          print('paper-only boundary verified')
+          PY
