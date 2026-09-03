@@ -6,16 +6,22 @@ on:
       - 'frontend/**'
       - 'src/api/**'
       - 'engine/**'
+      - 'scripts/autonomous_research_report.py'
       - 'tests/test_research_api.py'
       - 'tests/test_command_api.py'
+      - 'tests/test_autonomous_report.py'
+      - '.github/workflows/autonomous-research.yml'
       - '.github/workflows/engine-site.yml'
   pull_request:
     paths:
       - 'frontend/**'
       - 'src/api/**'
       - 'engine/**'
+      - 'scripts/autonomous_research_report.py'
       - 'tests/test_research_api.py'
       - 'tests/test_command_api.py'
+      - 'tests/test_autonomous_report.py'
+      - '.github/workflows/autonomous-research.yml'
       - '.github/workflows/engine-site.yml'
 
 jobs:
@@ -28,13 +34,14 @@ jobs:
           python-version: '3.11'
       - name: Install engine API dependencies
         run: python -m pip install --upgrade pip pandas numpy fastapi pydantic pytest
-      - name: Compile engine and command APIs
-        run: python -m compileall engine src/api/routers/research.py src/api/routers/command.py src/api/main.py
-      - name: Run engine and command-center tests
+      - name: Compile engine, command and cloud research code
+        run: python -m compileall engine src/api/routers/research.py src/api/routers/command.py src/api/main.py scripts/autonomous_research_report.py
+      - name: Run engine, command-center and cloud-autonomy tests
         run: >-
           pytest -q
           tests/test_research_api.py
           tests/test_command_api.py
+          tests/test_autonomous_report.py
           tests/test_paper_scalper.py
           tests/test_risk_engine.py
           tests/test_signals.py
@@ -46,13 +53,17 @@ jobs:
           from engine.trading_config import PAPER_ONLY, LIVE_EXECUTION
           from engine.paper_scalper import PaperScalperBacktester
           from src.api.routers.command import command_status
+          from scripts.autonomous_research_report import generate_report
           status = asyncio.run(command_status())
           assert PAPER_ONLY is True
           assert LIVE_EXECUTION is False
           assert PaperScalperBacktester().can_execute_live() is False
           assert status['paper_only'] is True
           assert status['live_execution'] is False
-          print('paper-only command boundary verified')
+          report = generate_report(symbols=('EURUSD',), bars=3500, seed=21)
+          assert report['paper_only'] is True
+          assert report['live_execution'] is False
+          print('paper-only command and cloud-autonomy boundaries verified')
           PY
 
   frontend:
@@ -69,5 +80,5 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install frontend dependencies
         run: npm ci
-      - name: Build command-center site
+      - name: Build command and autonomy site
         run: npm run build
