@@ -150,7 +150,8 @@ export function CommandCenter() {
     if (busy) return
     setBusy(true)
     const id = `auto_${Date.now()}`
-    setMissions((prev) => [{ id, at: new Date().toISOString(), command: label, status: 'running' }, ...prev].slice(0, 30))
+    const mission: Mission = { id, at: new Date().toISOString(), command: label, status: 'running' }
+    setMissions((prev) => [mission, ...prev].slice(0, 30))
     try {
       const response = await apiClient.post('/api/command/autonomous-cycle', {
         symbols: ['XAUUSD', 'XAGUSD', 'EURUSD', 'GBPUSD'],
