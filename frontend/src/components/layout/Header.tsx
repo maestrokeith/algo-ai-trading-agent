@@ -39,8 +39,8 @@ export function Header() {
   const themeIcon = themeMode === 'system' ? '⊙' : resolvedTheme === 'dark' ? '◐' : '○'
 
   return (
-    <header style={{ position: 'relative', display: 'flex', alignItems: 'center', padding: '14px 20px', borderBottom: '1px solid var(--border)', gap: 14, zIndex: 10 }}>
-      <div style={{ position: 'absolute', bottom: -1, left: 20, width: 360, height: 1, background: 'linear-gradient(90deg, var(--amber), transparent)' }} />
+    <header style={{ position: 'relative', display: 'flex', alignItems: 'center', flexWrap: 'wrap', padding: '14px 20px', borderBottom: '1px solid var(--border)', gap: 12, zIndex: 10 }}>
+      <div style={{ position: 'absolute', bottom: -1, left: 20, width: 420, maxWidth: '80vw', height: 1, background: 'linear-gradient(90deg, var(--amber), transparent)' }} />
 
       <div style={{ fontFamily: 'var(--font-display)', fontSize: 25, letterSpacing: '0.08em', color: 'var(--amber)', flexShrink: 0 }}>
         ALGO<span style={{ color: 'var(--text-dim)' }}>SPHERE</span>
@@ -51,8 +51,9 @@ export function Header() {
         PAPER RESEARCH · {status.toUpperCase()}
       </div>
 
-      <nav style={{ display: 'flex', gap: 2 }}>
+      <nav style={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
         {[
+          { to: '/command', label: 'COMMAND' },
           { to: '/engine', label: 'ENGINE' },
           { to: '/dashboard', label: 'DASHBOARD' },
           { to: '/agents', label: 'AGENTS' },
@@ -80,7 +81,7 @@ export function Header() {
 
       {role === 'admin' && <UserSwitcher />}
 
-      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-muted)' }}>LOOP {loopCount.toLocaleString()}</span>
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--green)', border: '1px solid var(--border)', padding: '4px 8px' }}>LIVE ORDERS OFF</span>
         <button onClick={cycleTheme} title={`Theme: ${themeMode}`} style={buttonStyle}>{themeIcon}</button>
