@@ -7,6 +7,7 @@ import { AuthGuard }  from '@/components/layout/AuthGuard'
 import { Dashboard }  from '@/pages/Dashboard'
 import { AgentDashboard } from '@/pages/AgentDashboard'
 import { CommandCenter } from '@/pages/CommandCenter'
+import { Autonomy } from '@/pages/Autonomy'
 import { Engine }     from '@/pages/Engine'
 import { Trades }     from '@/pages/Trades'
 import { Settings }   from '@/pages/Settings'
@@ -23,6 +24,7 @@ export default function App() {
           <Route element={<AppShell />}>
             <Route index             element={<Navigate to="/command" replace />} />
             <Route path="/command"   element={<CommandCenter />} />
+            <Route path="/autonomy"  element={<Autonomy />} />
             <Route path="/engine"    element={<Engine />} />
           </Route>
 
