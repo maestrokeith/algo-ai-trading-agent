@@ -6,6 +6,7 @@ import { AppShell }   from '@/components/layout/AppShell'
 import { AuthGuard }  from '@/components/layout/AuthGuard'
 import { Dashboard }  from '@/pages/Dashboard'
 import { AgentDashboard } from '@/pages/AgentDashboard'
+import { CommandCenter } from '@/pages/CommandCenter'
 import { Engine }     from '@/pages/Engine'
 import { Trades }     from '@/pages/Trades'
 import { Settings }   from '@/pages/Settings'
@@ -20,8 +21,9 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route element={<AppShell />}>
-            <Route index          element={<Navigate to="/engine" replace />} />
-            <Route path="/engine" element={<Engine />} />
+            <Route index             element={<Navigate to="/command" replace />} />
+            <Route path="/command"   element={<CommandCenter />} />
+            <Route path="/engine"    element={<Engine />} />
           </Route>
 
           <Route path="/login"      element={<Login />} />
