@@ -1,0 +1,11 @@
+{
+  "status": "initializing",
+  "mode": "paper_research",
+  "paper_only": true,
+  "live_execution": false,
+  "generated_at": null,
+  "cycle_id": null,
+  "ranking": [],
+  "history": [],
+  "agent_council": []
+}
