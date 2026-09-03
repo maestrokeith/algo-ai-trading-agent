@@ -19,14 +19,17 @@ export default function App() {
       <ThemeProvider>
       <BrowserRouter>
         <Routes>
+          <Route element={<AppShell />}>
+            <Route index          element={<Navigate to="/engine" replace />} />
+            <Route path="/engine" element={<Engine />} />
+          </Route>
+
           <Route path="/login"      element={<Login />} />
           <Route path="/signup"     element={<Signup />} />
           <Route path="/onboarding" element={<Onboarding />} />
 
           <Route element={<AuthGuard />}>
             <Route element={<AppShell />}>
-              <Route index             element={<Navigate to="/engine" replace />} />
-              <Route path="/engine"    element={<Engine />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/agents"    element={<AgentDashboard />} />
               <Route path="/trades"    element={<Trades />} />
