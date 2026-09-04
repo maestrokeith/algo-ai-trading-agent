@@ -58,23 +58,29 @@ jobs:
           assert data['live_execution'] is False
           assert data['web_ui'] is True
           assert data['command_center'] is True
+          assert data['omni_market'] is True
           print('Render production image is healthy and paper-only')
           PY
-      - name: Verify command and autonomy web routes
+      - name: Verify command, omni and autonomy web routes
         run: |
           curl --fail --silent http://127.0.0.1:10000/command | grep -q '<div id="root"></div>'
+          curl --fail --silent http://127.0.0.1:10000/omni | grep -q '<div id="root"></div>'
           curl --fail --silent http://127.0.0.1:10000/autonomy | grep -q '<div id="root"></div>'
           curl --fail --silent http://127.0.0.1:10000/engine | grep -q '<div id="root"></div>'
-      - name: Verify command API safety status
+      - name: Verify research API safety status
         run: |
           curl --fail --silent http://127.0.0.1:10000/api/command/status > command-status.json
+          curl --fail --silent http://127.0.0.1:10000/api/omni/status > omni-status.json
           python - <<'PY'
           import json
-          data = json.load(open('command-status.json'))
-          assert data['paper_only'] is True
-          assert data['live_execution'] is False
-          assert data['autonomy'] == 'bounded_research_only'
-          print('command API safety status verified')
+          command = json.load(open('command-status.json'))
+          omni = json.load(open('omni-status.json'))
+          assert command['paper_only'] is True and command['live_execution'] is False
+          assert command['autonomy'] == 'bounded_research_only'
+          assert omni['paper_only'] is True and omni['live_execution'] is False
+          assert 'memecoin' in omni['markets']
+          assert 'futures' in omni['markets']
+          print('command and omni API safety status verified')
           PY
       - name: Show container logs on failure
         if: failure()
