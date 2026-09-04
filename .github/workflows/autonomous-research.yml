@@ -43,13 +43,13 @@ jobs:
 
       - name: Generate autonomous FX research report
         run: |
-          python scripts/autonomous_research_report.py \
+          PYTHONPATH=. python scripts/autonomous_research_report.py \
             --previous /tmp/previous.json \
             --output /tmp/latest.json
 
       - name: Generate autonomous omni-market research report
         run: |
-          python scripts/omni_research_report.py \
+          PYTHONPATH=. python scripts/omni_research_report.py \
             --previous /tmp/omni_previous.json \
             --output /tmp/omni_latest.json
 
