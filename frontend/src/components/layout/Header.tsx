@@ -54,6 +54,7 @@ export function Header() {
       <nav style={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
         {[
           { to: '/command', label: 'COMMAND' },
+          { to: '/autonomy', label: 'AUTONOMY' },
           { to: '/engine', label: 'ENGINE' },
           { to: '/dashboard', label: 'DASHBOARD' },
           { to: '/agents', label: 'AGENTS' },
