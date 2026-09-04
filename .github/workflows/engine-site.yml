@@ -7,9 +7,11 @@ on:
       - 'src/api/**'
       - 'engine/**'
       - 'scripts/autonomous_research_report.py'
+      - 'scripts/omni_research_report.py'
       - 'tests/test_research_api.py'
       - 'tests/test_command_api.py'
       - 'tests/test_autonomous_report.py'
+      - 'tests/test_omni_market.py'
       - '.github/workflows/autonomous-research.yml'
       - '.github/workflows/engine-site.yml'
   pull_request:
@@ -18,9 +20,11 @@ on:
       - 'src/api/**'
       - 'engine/**'
       - 'scripts/autonomous_research_report.py'
+      - 'scripts/omni_research_report.py'
       - 'tests/test_research_api.py'
       - 'tests/test_command_api.py'
       - 'tests/test_autonomous_report.py'
+      - 'tests/test_omni_market.py'
       - '.github/workflows/autonomous-research.yml'
       - '.github/workflows/engine-site.yml'
 
@@ -34,14 +38,23 @@ jobs:
           python-version: '3.11'
       - name: Install engine API dependencies
         run: python -m pip install --upgrade pip pandas numpy fastapi pydantic pytest
-      - name: Compile engine, command and cloud research code
-        run: python -m compileall engine src/api/routers/research.py src/api/routers/command.py src/api/main.py scripts/autonomous_research_report.py
-      - name: Run engine, command-center and cloud-autonomy tests
+      - name: Compile engine, command and omni research code
+        run: >-
+          python -m compileall
+          engine
+          src/api/routers/research.py
+          src/api/routers/command.py
+          src/api/routers/omni.py
+          src/api/main.py
+          scripts/autonomous_research_report.py
+          scripts/omni_research_report.py
+      - name: Run engine, command-center and omni-autonomy tests
         run: >-
           pytest -q
           tests/test_research_api.py
           tests/test_command_api.py
           tests/test_autonomous_report.py
+          tests/test_omni_market.py
           tests/test_paper_scalper.py
           tests/test_risk_engine.py
           tests/test_signals.py
@@ -52,18 +65,26 @@ jobs:
           import asyncio
           from engine.trading_config import PAPER_ONLY, LIVE_EXECUTION
           from engine.paper_scalper import PaperScalperBacktester
+          from engine.omni_market import PAPER_ONLY as OMNI_PAPER_ONLY, LIVE_EXECUTION as OMNI_LIVE_EXECUTION, scan_markets
           from src.api.routers.command import command_status
+          from src.api.routers.omni import omni_status
           from scripts.autonomous_research_report import generate_report
+          from scripts.omni_research_report import build
           status = asyncio.run(command_status())
+          omni_status_payload = asyncio.run(omni_status())
           assert PAPER_ONLY is True
           assert LIVE_EXECUTION is False
+          assert OMNI_PAPER_ONLY is True
+          assert OMNI_LIVE_EXECUTION is False
           assert PaperScalperBacktester().can_execute_live() is False
-          assert status['paper_only'] is True
-          assert status['live_execution'] is False
+          assert status['paper_only'] is True and status['live_execution'] is False
+          assert omni_status_payload['paper_only'] is True and omni_status_payload['live_execution'] is False
           report = generate_report(symbols=('EURUSD',), bars=3500, seed=21)
-          assert report['paper_only'] is True
-          assert report['live_execution'] is False
-          print('paper-only command and cloud-autonomy boundaries verified')
+          omni_report = build({}, seed=21)
+          assert report['paper_only'] is True and report['live_execution'] is False
+          assert omni_report['paper_only'] is True and omni_report['live_execution'] is False
+          assert scan_markets(['memecoin'], 21)['live_execution'] is False
+          print('paper-only omni-market boundaries verified')
           PY
 
   frontend:
@@ -80,5 +101,5 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install frontend dependencies
         run: npm ci
-      - name: Build command and autonomy site
+      - name: Build omni-market site
         run: npm run build
