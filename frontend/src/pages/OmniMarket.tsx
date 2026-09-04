@@ -87,7 +87,7 @@ export function OmniMarket() {
   }
 
   const leaders = useMemo(() => scan?.rows?.slice(0, 12) ?? [], [scan])
-  const agents = scan?.leader?.agents ?? sniper?.agents ?? []
+  const agents: AgentVote[] = scan?.leader?.agents ?? sniper?.agents ?? []
 
   return <div style={{ paddingTop: 16, display: 'grid', gap: 14 }}>
     <Panel title="AlgoSphere Omni-Market Intelligence" tag={busy ? 'SCANNING' : 'AUTONOMOUS PAPER RESEARCH'} accented>
