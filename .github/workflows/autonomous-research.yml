@@ -6,7 +6,9 @@ on:
     branches:
       - main
     paths:
+      - 'engine/omni_market.py'
       - 'scripts/autonomous_research_report.py'
+      - 'scripts/omni_research_report.py'
       - '.github/workflows/autonomous-research.yml'
   schedule:
     - cron: '17,47 * * * *'
@@ -37,36 +39,50 @@ jobs:
         run: |
           git fetch origin research-state:refs/remotes/origin/research-state || true
           git show origin/research-state:autonomy/latest.json > /tmp/previous.json || echo '{}' > /tmp/previous.json
+          git show origin/research-state:autonomy/omni_latest.json > /tmp/omni_previous.json || echo '{}' > /tmp/omni_previous.json
 
-      - name: Generate autonomous paper research report
+      - name: Generate autonomous FX research report
         run: |
-          python scripts/autonomous_research_report.py \
+          PYTHONPATH=. python scripts/autonomous_research_report.py \
             --previous /tmp/previous.json \
             --output /tmp/latest.json
 
-      - name: Verify paper-only report boundary
+      - name: Generate autonomous omni-market research report
+        run: |
+          PYTHONPATH=. python scripts/omni_research_report.py \
+            --previous /tmp/omni_previous.json \
+            --output /tmp/omni_latest.json
+
+      - name: Verify paper-only report boundaries
         run: |
           python - <<'PY'
           import json
-          data = json.load(open('/tmp/latest.json'))
-          assert data['paper_only'] is True
-          assert data['live_execution'] is False
-          assert data['mode'] == 'paper_research'
-          assert data['data_source'] == 'deterministic_synthetic_research'
-          print('autonomous cloud report boundary verified')
+          for path in ('/tmp/latest.json', '/tmp/omni_latest.json'):
+              data = json.load(open(path))
+              assert data['paper_only'] is True
+              assert data['live_execution'] is False
+              assert data['mode'] == 'paper_research'
+              assert data['data_source'] == 'deterministic_synthetic_research'
+          omni = json.load(open('/tmp/omni_latest.json'))
+          assert omni['scan']['live_execution'] is False
+          assert omni['memecoin_radar']['live_execution'] is False
+          assert omni['futures_lab']['live_execution'] is False
+          assert omni['options_reference']['live_execution'] is False
+          print('autonomous omni research boundaries verified')
           PY
 
-      - name: Publish latest report to research-state branch
+      - name: Publish latest reports to research-state branch
         run: |
           git checkout -B research-state origin/research-state
           mkdir -p autonomy
           cp /tmp/latest.json autonomy/latest.json
+          cp /tmp/omni_latest.json autonomy/omni_latest.json
           git config user.name 'algosphere-research-bot'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add autonomy/latest.json
+          git add autonomy/latest.json autonomy/omni_latest.json
           if git diff --cached --quiet; then
             echo 'No report changes to publish'
           else
-            git commit -m 'Update autonomous paper research state'
+            git commit -m 'Update autonomous omni-market research state'
             git push origin research-state
           fi
