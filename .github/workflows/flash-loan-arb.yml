@@ -1,0 +1,28 @@
+name: Flash loan arbitrage checks
+on:
+  push:
+    branches: ['codex/flash-loan-arb']
+    paths: ['flash-loan-arb/**', '.github/workflows/flash-loan-arb.yml']
+  pull_request:
+    paths: ['flash-loan-arb/**', '.github/workflows/flash-loan-arb.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: flash-loan-arb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm test
+      - run: npm run demo
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.3.1
+      - run: forge test -vv

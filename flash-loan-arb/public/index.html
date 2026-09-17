@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flash Arb · Research desk</title>
+<style>
+:root{color-scheme:dark;font:16px system-ui,sans-serif;background:#0b1119;color:#e7edf4}body{max-width:1120px;margin:auto;padding:36px 22px}header{display:flex;align-items:center;justify-content:space-between;gap:20px}h1{font-size:32px;letter-spacing:-1px;margin:8px 0}h2{font-size:18px}small,.muted{color:#9aaac0}b{font-weight:600}.badge{border:1px solid #32675e;padding:8px 12px;border-radius:24px;color:#7ce4bd}.notice{background:#172331;border-left:3px solid #7ce4bd;padding:16px;margin:26px 0;line-height:1.6}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.card{border:1px solid #263649;padding:22px;border-radius:12px;background:#101b27}.value{font-size:28px;display:block;margin-top:10px}.table{overflow-x:auto;border:1px solid #263649;border-radius:12px}table{width:100%;border-collapse:collapse;text-align:left;white-space:nowrap}th,td{padding:16px;border-bottom:1px solid #233043}th{font-size:12px;color:#9aaac0;text-transform:uppercase;letter-spacing:1px}.positive{color:#7ce4bd}.negative{color:#f6a6a6}footer{font-size:13px;line-height:1.8;margin-top:28px;color:#9aaac0}#error{color:#f6a6a6}@media(max-width:650px){.cards{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}body{padding:22px 14px}}
+</style>
+<header><div><small>ETHEREUM / WETH–USDC</small><h1>Flash Arb</h1><span class="muted">Opportunity research desk</span></div><span class="badge">Read only · No wallet</span></header>
+<div class="notice"><b id="mode">Loading…</b><br>Candidate returns are estimates after loan fee, swap impact, slippage buffer and assumed gas. They are not executed trades or earned income.</div>
+<div class="cards"><div class="card"><small>Candidates this snapshot</small><b class="value" id="candidates">—</b></div><div class="card"><small>Real trades executed</small><b class="value">0</b></div><div class="card"><small>Realized profit · WETH</small><b class="value">0</b></div></div>
+<h2>Routes &amp; estimated net return</h2><p class="muted" id="snapshot"></p><p id="error" role="alert"></p>
+<div class="table"><table><thead><tr><th>Route</th><th>Borrow · WETH</th><th>Net · WETH</th><th>Decision</th></tr></thead><tbody id="rows"></tbody></table></div>
+<footer>One-chain atomic arbitrage · Aave V3 / Uniswap V2 / Sushi V2<br>Demo uses invented reserves. To read chain data, restart with RPC_URL set. A separate local fork runner validates full transactions. No live broadcast endpoint exists in this dashboard.</footer>
+<script>
+const el=id=>document.getElementById(id);
+async function refresh(){try{const r=await fetch('/api/status');if(!r.ok)throw Error('Dashboard unavailable');const s=await r.json();
+el('mode').textContent=s.mode;el('error').textContent=s.message||'';
+el('snapshot').textContent=(s.block?'Block '+s.block+' · ':'')+(s.timestamp||'Starting')+' · '+s.status;
+el('candidates').textContent=s.status==='error'?'—':(s.rows||[]).filter(x=>x.candidate).length;
+el('rows').replaceChildren();for(const x of s.rows||[]){const tr=document.createElement('tr');for(const v of [x.route,x.amountWeth,x.netWeth||'—',x.status]){const td=document.createElement('td');td.textContent=v;tr.appendChild(td);}tr.children[2].className=Number(x.netWeth)>0?'positive':'negative';el('rows').appendChild(tr);}}
+catch(e){el('error').textContent=e.message;el('rows').replaceChildren();el('candidates').textContent='—';}setTimeout(refresh,5000);}refresh();
+</script></html>

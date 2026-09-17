@@ -1,0 +1,16 @@
+{
+  "name": "flash-loan-arb-lab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=22"},
+  "scripts": {
+    "start": "node src/server.mjs",
+    "demo": "node src/cli.mjs --demo",
+    "scan": "node src/cli.mjs",
+    "watch": "node src/cli.mjs --watch",
+    "fork": "node scripts/fork.mjs",
+    "test": "node --test test/*.test.mjs",
+    "test:contracts": "forge test -vv"
+  }
+}
