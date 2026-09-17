@@ -27,12 +27,14 @@ contract MockPool {
 }
 contract MockRouter {
     uint256 public rate=10000;
+    uint256 public slip;
+    function setSlippage(uint256 n) external {slip=n;}
     function getAmountsOut(uint256 n,address[] calldata) external view returns(uint256[] memory a){a=new uint256[](2);a[0]=n;a[1]=n*rate/10000;}
     function setRate(uint256 n) external {rate=n;}
     function swapExactTokensForTokens(uint256 n,uint256 minimum,address[] calldata path,address to,uint256 deadline)
         external returns(uint256[] memory amounts){
         require(block.timestamp<=deadline,"deadline");
-        uint256 output=n*rate/10000;require(output>=minimum,"slippage");
+        uint256 output=n*rate/10000*(10000-slip)/10000;require(output>=minimum,"slippage");
         MockToken(path[0]).transferFrom(msg.sender,address(this),n);
         MockToken(path[1]).transfer(to,output);
         amounts=new uint256[](2);amounts[0]=n;amounts[1]=output;
@@ -84,6 +86,14 @@ contract FlashArbTest {
     function testSlippageRevertsWholeLoan() public {
         FlashArb.Trade memory t=trade();t.minOutA=2 ether;vm.expectRevert();arb.execute(t);
         require(a.balanceOf(address(pool))==1000 ether,"not atomic");
+    }
+    function testOnChainHalfPercentSlippageCap() public {
+        r1.setSlippage(60);FlashArb.Trade memory t=trade();t.minOutA=0.99 ether;t.minOutB=0.99 ether;
+        vm.expectRevert();arb.execute(t);
+    }
+    function testSlippageWithinCapAccepted() public {
+        r1.setSlippage(40);FlashArb.Trade memory t=trade();t.minOutA=0.99 ether;t.minOutB=0.99 ether;
+        require(arb.execute(t)>t.minProfit);
     }
     function testBorrowCap() public {FlashArb.Trade memory t=trade();t.amount=11 ether;vm.expectRevert();arb.execute(t);}
     function testZeroProfitGuardRejected() public {

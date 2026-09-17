@@ -26,3 +26,17 @@ jobs:
         with:
           version: v1.3.1
       - run: forge test -vv
+      - name: Read-only Ethereum RPC smoke
+        id: rpc
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          RPC_URL: https://ethereum-rpc.publicnode.com
+        run: npm run scan
+      - name: Local Ethereum fork smoke
+        if: steps.rpc.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 3
+        env:
+          RPC_URL: https://ethereum-rpc.publicnode.com
+        run: node scripts/ci-fork.mjs
